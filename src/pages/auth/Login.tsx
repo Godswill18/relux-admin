@@ -149,6 +149,12 @@ export default function Login() {
                 'Sign In'
               )}
             </Button>
+
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                Forgot password?
+              </Link>
+            </div>
           </form>
           <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
             <p className="font-semibold mb-1">Demo Credentials:</p>

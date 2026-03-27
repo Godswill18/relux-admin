@@ -12,6 +12,7 @@ import { StaffLayout } from '@/components/layouts/StaffLayout';
 import { PlaceholderPage } from '@/components/shared/PlaceholderPage';
 import Login from '@/pages/auth/Login';
 import Signup from '@/pages/auth/Signup';
+import ForgotPassword from '@/pages/auth/ForgotPassword';
 import AdminDashboard from '@/features/admin/dashboard/AdminDashboard';
 import OrdersPage from '@/features/admin/orders/OrdersPage';
 import OrderDetailPage from '@/features/admin/orders/OrderDetailPage';
@@ -95,6 +96,7 @@ const App = () => (
           =================================================================== */}
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
           {/* ===================================================================

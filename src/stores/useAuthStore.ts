@@ -31,6 +31,8 @@ interface AuthState {
   checkAuth: () => boolean;
   setShiftEnd: (endTime: number) => void;
   clearShiftEnd: () => void;
+  forgotPassword: (email: string) => Promise<void>;
+  resetPassword: (email: string, otp: string, newPassword: string) => Promise<void>;
 }
 
 // ============================================================================
@@ -90,7 +92,15 @@ export const useAuthStore = create<AuthState>()(
           }
         } catch (error: any) {
           set({ isLoading: false });
-          throw new Error(error.response?.data?.message || error.message || 'Login failed');
+          const message =
+            error.response?.data?.message ||
+            error.response?.data?.error?.message ||
+            (error.response?.status === 429
+              ? 'Too many login attempts. Please wait a moment and try again.'
+              : null) ||
+            error.message ||
+            'Login failed';
+          throw new Error(message);
         }
       },
 
@@ -158,6 +168,20 @@ export const useAuthStore = create<AuthState>()(
 
       clearShiftEnd: () => {
         set({ shiftEndTime: null });
+      },
+
+      forgotPassword: async (email: string) => {
+        const response = await apiClient.post('/auth/forgot-password', { email });
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Failed to send reset code');
+        }
+      },
+
+      resetPassword: async (email: string, otp: string, newPassword: string) => {
+        const response = await apiClient.post('/auth/reset-password', { email, otp, newPassword });
+        if (!response.data.success) {
+          throw new Error(response.data.message || 'Password reset failed');
+        }
       },
     }),
     {
