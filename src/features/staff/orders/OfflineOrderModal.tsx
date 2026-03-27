@@ -2,6 +2,7 @@
 // OFFLINE ORDER MODAL - Staff creates a walk-in order without a customer account
 // ============================================================================
 
+import { useEffect } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -34,6 +35,7 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import apiClient from '@/lib/api/client';
+import { useServiceStore } from '@/stores/useServiceStore';
 
 // ============================================================================
 // CONSTANTS
@@ -78,6 +80,12 @@ interface OfflineOrderModalProps {
 }
 
 export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrderModalProps) {
+  const { categories, fetchCategories } = useServiceStore();
+
+  useEffect(() => {
+    if (open) fetchCategories();
+  }, [open, fetchCategories]);
+
   const form = useForm<OfflineOrderForm>({
     resolver: zodResolver(offlineOrderSchema),
     defaultValues: {
@@ -232,15 +240,34 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
 
               {fields.map((field, index) => (
                 <div key={field.id} className="grid grid-cols-[1fr_160px_64px_100px_36px] gap-2 items-start">
-                  {/* Item name */}
+                  {/* Item name — service category dropdown */}
                   <FormField
                     control={form.control}
                     name={`items.${index}.itemType`}
                     render={({ field }) => (
                       <FormItem>
-                        <FormControl>
-                          <Input placeholder="e.g. Shirt, Trousers" {...field} />
-                        </FormControl>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Select item" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {categories.filter((c) => c.isActive !== false).length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                No categories found
+                              </SelectItem>
+                            ) : (
+                              categories
+                                .filter((c) => c.isActive !== false)
+                                .map((c) => (
+                                  <SelectItem key={c.id || c._id} value={c.name}>
+                                    {c.name}
+                                  </SelectItem>
+                                ))
+                            )}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}

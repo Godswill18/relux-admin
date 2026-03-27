@@ -91,7 +91,7 @@ interface CreateOrderModalProps {
 export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) {
   const { createOrder } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
-  const { services, fetchServices } = useServiceStore();
+  const { services, categories, fetchServices, fetchCategories } = useServiceStore();
   const { staff, fetchStaff } = useStaffStore();
   const [customerSearch, setCustomerSearch] = useState('');
 
@@ -99,9 +99,10 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
     if (open) {
       fetchCustomers();
       fetchServices();
+      fetchCategories();
       fetchStaff();
     }
-  }, [open, fetchCustomers, fetchServices, fetchStaff]);
+  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchStaff]);
 
   const form = useForm<CreateOrderForm>({
     resolver: zodResolver(createOrderSchema),
@@ -323,16 +324,35 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
 
             {fields.map((field, index) => (
               <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                {/* Item name */}
+                {/* Item name — service category dropdown */}
                 <div className="col-span-3">
                   <FormField
                     control={form.control}
                     name={`items.${index}.itemType`}
                     render={({ field }) => (
                       <FormItem>
-                        <FormControl>
-                          <Input placeholder="e.g. Shirt, Trousers" {...field} />
-                        </FormControl>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger className="h-9">
+                              <SelectValue placeholder="Select item" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {categories.filter((c) => c.isActive !== false).length === 0 ? (
+                              <SelectItem value="__none" disabled>
+                                No categories found
+                              </SelectItem>
+                            ) : (
+                              categories
+                                .filter((c) => c.isActive !== false)
+                                .map((c) => (
+                                  <SelectItem key={c.id || c._id} value={c.name}>
+                                    {c.name}
+                                  </SelectItem>
+                                ))
+                            )}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
