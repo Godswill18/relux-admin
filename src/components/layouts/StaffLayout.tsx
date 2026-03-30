@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { ReactNode, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -185,19 +186,24 @@ interface StaffLayoutProps {
 
 export function StaffLayout({ children }: StaffLayoutProps) {
   const permissions = useAuthStore((state) => state.permissions);
+  const { pathname } = useLocation();
 
   const navItems: NavItem[] = useMemo(
     () => [
       // Staff-native pages — show if user has the required permission (or no permission needed)
+      // Mark Profile as hidden (not removed) when already on the profile page so sibling items don't shift
       ...STAFF_NAV.filter(
         (item) => !item.permission || permissions.includes(item.permission as Permission)
-      ),
+      ).map((item) => ({
+        ...item,
+        hidden: item.path === '/staff/profile' && pathname === '/staff/profile',
+      })),
       // Admin-only pages — show ONLY if user has been explicitly granted the permission
       ...ADMIN_ONLY_NAV.filter((item) =>
         item.permission && permissions.includes(item.permission as Permission)
       ),
     ],
-    [permissions]
+    [permissions, pathname]
   );
 
   return (

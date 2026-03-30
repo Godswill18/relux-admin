@@ -8,40 +8,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { usePaymentStore } from '@/stores/usePaymentStore';
 import { TransactionsTab } from './TransactionsTab';
 import { PaymentSettingsTab } from './PaymentSettingsTab';
-import { DollarSign, CreditCard, Wallet } from 'lucide-react';
-import { useOrderStore } from '@/stores/useOrderStore';
+import { DollarSign, CreditCard, XCircle } from 'lucide-react';
+import { usePaymentSocket } from '@/lib/hooks/usePaymentSocket';
+
 // ============================================================================
 // PAYMENTS PAGE COMPONENT
 // ============================================================================
 
 export default function PaymentsPage() {
-  const { fetchPayments, fetchSettings } = usePaymentStore();
-  const { orders } = useOrderStore();
+  const { payments, fetchPayments, fetchSettings } = usePaymentStore();
   const [activeTab, setActiveTab] = useState('transactions');
 
-  // Fetch data on mount
+  usePaymentSocket();
+
   useEffect(() => {
     fetchPayments();
     fetchSettings();
   }, [fetchPayments, fetchSettings]);
 
-  // Calculate stats from orders (backend returns lowercase status strings)
-  const orderList: any[] = Array.isArray(orders) ? orders : [];
+  const paymentList: any[] = Array.isArray(payments) ? payments : [];
 
-  const totalRevenue = orderList
-    .filter((o) => (o.payment?.status || o.paymentStatus || '').toLowerCase() === 'paid')
-    .reduce((sum, o) => sum + (o.pricing?.total || o.total || 0), 0);
+  const totalRevenue = paymentList
+    .filter((p) => p.state === 'paid')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  const pendingPayments = orderList
-    .filter((o) => {
-      const ps = (o.payment?.status || o.paymentStatus || '').toLowerCase();
-      return ps === 'pending' || ps === 'unpaid';
-    })
-    .reduce((sum, o) => sum + (o.pricing?.total || o.total || 0), 0);
+  const pendingCount = paymentList.filter((p) => p.state === 'pending').length;
+  const pendingAmount = paymentList
+    .filter((p) => p.state === 'pending')
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  const confirmedPayments = orderList
-    .filter((o) => (o.payment?.status || o.paymentStatus || '').toLowerCase() === 'confirmed')
-    .reduce((sum, o) => sum + (o.pricing?.total || o.total || 0), 0);
+  const failedCount = paymentList.filter((p) => p.state === 'failed').length;
 
   return (
     <div className="space-y-6">
@@ -60,7 +56,7 @@ export default function PaymentsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₦{totalRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">From paid orders</p>
+            <p className="text-xs text-muted-foreground">From confirmed payments</p>
           </CardContent>
         </Card>
 
@@ -70,19 +66,19 @@ export default function PaymentsPage() {
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₦{pendingPayments.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Awaiting payment</p>
+            <div className="text-2xl font-bold">₦{pendingAmount.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">{pendingCount} awaiting confirmation</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Confirmed Payments</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Failed Payments</CardTitle>
+            <XCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₦{confirmedPayments.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Processing confirmation</p>
+            <div className="text-2xl font-bold">{failedCount}</div>
+            <p className="text-xs text-muted-foreground">Transactions failed</p>
           </CardContent>
         </Card>
       </div>

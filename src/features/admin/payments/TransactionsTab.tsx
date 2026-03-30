@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { ColumnDef } from '@tanstack/react-table';
-import { MoreHorizontal, CheckCircle, XCircle, DollarSign } from 'lucide-react';
+import { MoreHorizontal, CheckCircle } from 'lucide-react';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,80 +16,89 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useOrderStore } from '@/stores/useOrderStore';
 import { usePaymentStore } from '@/stores/usePaymentStore';
 import { useHasPermission } from '@/stores/useAuthStore';
-import { Order, Permission } from '@/types';
+import { Permission } from '@/types';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+const METHOD_LABELS: Record<string, string> = {
+  cash: 'Cash',
+  paystack: 'Paystack',
+  wallet: 'Wallet',
+  pos: 'POS',
+  transfer: 'Bank Transfer',
+};
+
+function getCustomerName(payment: any): string {
+  const order = payment.orderId;
+  if (!order) return '—';
+  return (
+    order.customer?.name ||
+    order.walkInCustomer?.name ||
+    '—'
+  );
+}
 
 // ============================================================================
 // TRANSACTIONS TAB COMPONENT
 // ============================================================================
 
 export function TransactionsTab() {
-  const { orders, isLoading } = useOrderStore();
-  const { confirmPayment } = usePaymentStore();
+  const { payments, isLoading, confirmPayment } = usePaymentStore();
   const canConfirmPayment = useHasPermission(Permission.CONFIRM_PAYMENT);
   const canProcessRefund = useHasPermission(Permission.PROCESS_REFUND);
 
-  // Handle confirm payment
-  const handleConfirm = async (order: any) => {
+  const handleConfirm = async (payment: any) => {
     try {
-      await confirmPayment(order._id || order.id);
+      await confirmPayment(payment._id || payment.id);
       toast.success('Payment confirmed successfully');
-    } catch (error) {
+    } catch {
       toast.error('Failed to confirm payment');
     }
   };
 
-  // Define columns
   const columns: ColumnDef<any>[] = [
     {
-      accessorKey: 'orderNumber',
+      id: 'orderNumber',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
       cell: ({ row }) => (
-        <div className="font-medium">{row.original.orderNumber || row.original.code || '—'}</div>
+        <div className="font-medium">
+          {row.original.orderId?.orderNumber || '—'}
+        </div>
       ),
     },
     {
       id: 'customer',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Customer" />,
-      cell: ({ row }) => row.original.customer?.name || '—',
+      cell: ({ row }) => (
+        <div className="text-sm">{getCustomerName(row.original)}</div>
+      ),
     },
     {
-      id: 'paymentMethod',
+      accessorKey: 'method',
       header: 'Payment Method',
       cell: ({ row }) => {
-        const method = row.original.payment?.method || row.original.paymentMethod || '';
-        const methodLabels: Record<string, string> = {
-          cash: 'Cash',
-          card: 'Card',
-          bank_transfer: 'Bank Transfer',
-          bank: 'Bank Transfer',
-          wallet: 'Wallet',
-          pos: 'POS',
-        };
-        const label = methodLabels[method?.toLowerCase?.()] || method || 'Unknown';
+        const method = row.original.method || '';
+        const label = METHOD_LABELS[method.toLowerCase()] || method || 'Unknown';
         return <Badge variant="outline">{label}</Badge>;
       },
     },
     {
-      id: 'total',
+      accessorKey: 'amount',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Amount" />,
-      cell: ({ row }) => {
-        const total = row.original.pricing?.total || row.original.total || 0;
-        return <div className="font-medium">₦{total.toLocaleString()}</div>;
-      },
+      cell: ({ row }) => (
+        <div className="font-medium">₦{(row.original.amount || 0).toLocaleString()}</div>
+      ),
     },
     {
-      id: 'paymentStatus',
+      accessorKey: 'state',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => {
-        const paymentStatus = row.original.payment?.status || row.original.paymentStatus || 'unpaid';
-        return <PaymentStatusBadge status={paymentStatus} />;
-      },
+      cell: ({ row }) => <PaymentStatusBadge status={row.original.state || 'pending'} />,
     },
     {
       accessorKey: 'createdAt',
@@ -97,7 +106,7 @@ export function TransactionsTab() {
       cell: ({ row }) => {
         const date = row.original.createdAt;
         return (
-          <div className="text-sm">
+          <div className="text-sm text-muted-foreground">
             {date ? format(new Date(date), 'MMM dd, yyyy HH:mm') : '—'}
           </div>
         );
@@ -106,8 +115,8 @@ export function TransactionsTab() {
     {
       id: 'actions',
       cell: ({ row }) => {
-        const order = row.original;
-        const paymentStatus = (order.payment?.status || order.paymentStatus || '').toLowerCase();
+        const payment = row.original;
+        const state = (payment.state || '').toLowerCase();
 
         return (
           <DropdownMenu>
@@ -119,25 +128,20 @@ export function TransactionsTab() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              {canConfirmPayment && (paymentStatus === 'pending' || paymentStatus === 'unpaid') && (
+              {canConfirmPayment && state === 'pending' && (
                 <>
-                  <DropdownMenuItem onClick={() => handleConfirm(order)}>
+                  <DropdownMenuItem onClick={() => handleConfirm(payment)}>
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Confirm Payment
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}
-              {canProcessRefund && paymentStatus === 'paid' && (
-                <>
-                  <DropdownMenuItem className="text-destructive">
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    Refund Payment
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
+              {canProcessRefund && state === 'paid' && (
+                <DropdownMenuItem className="text-destructive">
+                  Refund Payment
+                </DropdownMenuItem>
               )}
-              <DropdownMenuItem>View Order Details</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         );
@@ -149,9 +153,9 @@ export function TransactionsTab() {
     <div className="space-y-4">
       <DataTable
         columns={columns}
-        data={Array.isArray(orders) ? orders : []}
-        searchKey="orderNumber"
-        searchPlaceholder="Search by order number or customer name..."
+        data={Array.isArray(payments) ? payments : []}
+        searchKey="method"
+        searchPlaceholder="Search by method..."
         isLoading={isLoading}
       />
     </div>

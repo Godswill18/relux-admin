@@ -16,6 +16,8 @@ import ForgotPassword from '@/pages/auth/ForgotPassword';
 import AdminDashboard from '@/features/admin/dashboard/AdminDashboard';
 import OrdersPage from '@/features/admin/orders/OrdersPage';
 import OrderDetailPage from '@/features/admin/orders/OrderDetailPage';
+import DeliveryConfirmPage from '@/features/admin/orders/DeliveryConfirmPage';
+import DeliveredOrdersPage from '@/features/admin/orders/DeliveredOrdersPage';
 import CustomersPage from '@/features/admin/customers/CustomersPage';
 import ServicesPage from '@/features/admin/services/ServicesPage';
 import PaymentsPage from '@/features/admin/payments/PaymentsPage';
@@ -123,6 +125,22 @@ const App = () => (
               element={
                 <ProtectedRoute requiredPermissions={[Permission.VIEW_ORDERS]}>
                   <OrdersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/delivery-confirm"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.UPDATE_ORDER_STATUS]}>
+                  <DeliveryConfirmPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/delivered"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.VIEW_ORDERS]}>
+                  <DeliveredOrdersPage />
                 </ProtectedRoute>
               }
             />
@@ -262,6 +280,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route path="profile" element={<StaffProfilePage />} />
           </Route>
 
           {/* ===================================================================

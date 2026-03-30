@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Edit, Trash, Plus } from 'lucide-react';
 import { AddServiceModal } from './AddServiceModal';
+import { EditServiceModal } from './EditServiceModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import { toast } from 'sonner';
 export function ServicesTab() {
   const { services, isLoading, updateService, deleteService } = useServiceStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const handleToggleActive = async (service: any) => {
@@ -93,7 +95,7 @@ export function ServicesTab() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditTarget(service)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Service
               </DropdownMenuItem>
@@ -122,6 +124,12 @@ export function ServicesTab() {
       </div>
 
       <AddServiceModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
+
+      <EditServiceModal
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        service={editTarget}
+      />
 
       <DeleteConfirmModal
         open={!!deleteTarget}

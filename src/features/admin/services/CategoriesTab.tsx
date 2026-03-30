@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Edit, Trash, Plus } from 'lucide-react';
 import { AddCategoryModal } from './AddCategoryModal';
+import { EditCategoryModal } from './EditCategoryModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import { toast } from 'sonner';
 export function CategoriesTab() {
   const { categories, services, isLoading, deleteCategory } = useServiceStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const getServiceName = (serviceId: any) => {
@@ -83,7 +85,7 @@ export function CategoriesTab() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditTarget(category)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Category
               </DropdownMenuItem>
@@ -112,6 +114,12 @@ export function CategoriesTab() {
       </div>
 
       <AddCategoryModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
+
+      <EditCategoryModal
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        category={editTarget}
+      />
 
       <DeleteConfirmModal
         open={!!deleteTarget}

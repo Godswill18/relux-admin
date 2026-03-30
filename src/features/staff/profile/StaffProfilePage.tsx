@@ -19,6 +19,9 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from '@/components/ui/form';
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
   User, Mail, Phone, MapPin, Briefcase, Calendar, ShieldCheck,
   Building2, CreditCard, DollarSign, Edit2, X, Loader2, KeyRound,
   PhoneCall, AlertCircle,
@@ -36,6 +39,7 @@ const profileSchema = z.object({
   phone:                 z.string().optional(),
   address:               z.string().optional(),
   city:                  z.string().optional(),
+  gender:                z.enum(['male', 'female', 'prefer_not_to_say', '']).optional(),
   emergencyContactName:  z.string().optional(),
   emergencyContactPhone: z.string().optional(),
 });
@@ -121,6 +125,7 @@ export default function StaffProfilePage() {
       phone:                 '',
       address:               '',
       city:                  '',
+      gender:                '',
       emergencyContactName:  '',
       emergencyContactPhone: '',
     },
@@ -162,6 +167,7 @@ export default function StaffProfilePage() {
       phone:                 profile?.phone                 ?? '',
       address:               profile?.address               ?? '',
       city:                  profile?.city                  ?? '',
+      gender:                profile?.gender                ?? '',
       emergencyContactName:  profile?.emergencyContactName  ?? '',
       emergencyContactPhone: profile?.emergencyContactPhone ?? '',
     });
@@ -320,6 +326,16 @@ export default function StaffProfilePage() {
                     <InfoRow icon={Mail}   label="Email"     value={profile?.email} />
                     <InfoRow icon={Phone}  label="Phone"     value={profile?.phone} />
                     <InfoRow icon={MapPin} label="Address"   value={[profile?.address, profile?.city].filter(Boolean).join(', ')} />
+                    <InfoRow
+                      icon={User}
+                      label="Gender"
+                      value={
+                        profile?.gender === 'male' ? 'Male'
+                        : profile?.gender === 'female' ? 'Female'
+                        : profile?.gender === 'prefer_not_to_say' ? 'Prefer not to say'
+                        : undefined
+                      }
+                    />
                   </div>
 
                   <Separator />
@@ -392,6 +408,28 @@ export default function StaffProfilePage() {
                           <FormItem>
                             <FormLabel>City</FormLabel>
                             <FormControl><Input placeholder="e.g. Lagos" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={profileForm.control}
+                        name="gender"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Gender</FormLabel>
+                            <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select gender" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="male">Male</SelectItem>
+                                <SelectItem value="female">Female</SelectItem>
+                                <SelectItem value="prefer_not_to_say">Prefer not to say</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <FormMessage />
                           </FormItem>
                         )}

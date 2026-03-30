@@ -52,7 +52,7 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   // Initial state
   payments: [],
   settings: {
-    enabledMethods: [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.BANK_TRANSFER],
+    enabledMethods: [PaymentMethod.CASH, PaymentMethod.WALLET, PaymentMethod.POS],
   },
   filters: {
     status: 'all',
@@ -71,7 +71,7 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       const params = new URLSearchParams();
 
       if (filters.status && filters.status !== 'all') {
-        params.append('status', filters.status);
+        params.append('state', filters.status);
       }
       if (filters.method && filters.method !== 'all') {
         params.append('method', filters.method);
@@ -85,7 +85,9 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       });
 
       if (response.data.success) {
-        set({ payments: response.data.data || [], isLoading: false });
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.payments || [];
+        set({ payments: list, isLoading: false });
       } else {
         throw new Error(response.data.error?.message || 'Failed to fetch payments');
       }
@@ -138,7 +140,7 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   // Confirm payment
   confirmPayment: async (paymentId) => {
     try {
-      const response = await apiClient.post(`/payments/${paymentId}/confirm`);
+      const response = await apiClient.put(`/payments/${paymentId}/confirm`);
 
       if (response.data.success) {
         await get().fetchPayments();

@@ -185,7 +185,9 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
 
       if (response.data.success) {
         set((state) => ({
-          customers: state.customers.filter((customer) => customer.id !== customerId),
+          customers: state.customers.filter(
+            (customer: any) => customer._id !== customerId && customer.id !== customerId
+          ),
           selectedCustomer:
             state.selectedCustomer?.id === customerId ? null : state.selectedCustomer,
         }));

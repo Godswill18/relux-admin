@@ -29,6 +29,7 @@ export interface NavItem {
   label: string;
   path: string;
   icon?: ReactNode;
+  hidden?: boolean;
 }
 
 interface BaseLayoutProps {
@@ -75,10 +76,9 @@ export function BaseLayout({
     window.location.href = '/login';
   };
 
-  // Profile page path — all roles use the staff profile page which shows the
-  // current user's own information. The route permission guard is open to all
-  // authenticated users so every role can reach it.
-  const profilePath = '/staff/profile';
+  // Profile page path — staff stay in StaffLayout; all other roles use the
+  // admin layout so their sidebar stays consistent.
+  const profilePath = user?.role === 'staff' ? '/staff/profile' : '/admin/profile';
 
   // Get user initials for avatar
   const userInitials =
@@ -106,22 +106,23 @@ export function BaseLayout({
         {/* Navigation (scrollable if many items) */}
         <ScrollArea className="flex-1">
           <nav className="space-y-1 px-3 py-4">
-            {navItems.map((item) => {
-              const active = isNavItemActive(location.pathname, item.path);
-              return (
+            {navItems.map((item) =>
+              item.hidden ? (
+                <div key={item.path} className="h-9" />
+              ) : (
                 <Link
                   key={item.path}
                   to={item.path}
                   className={cn(
                     'flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
-                    active && 'bg-primary/10 text-primary'
+                    isNavItemActive(location.pathname, item.path) && 'bg-primary/10 text-primary'
                   )}
                 >
                   {item.icon}
                   <span>{item.label}</span>
                 </Link>
-              );
-            })}
+              )
+            )}
           </nav>
         </ScrollArea>
 
@@ -178,23 +179,24 @@ export function BaseLayout({
                   {/* Mobile Navigation */}
                   <ScrollArea className="flex-1">
                     <nav className="space-y-1 px-3 py-4">
-                      {navItems.map((item) => {
-                        const active = isNavItemActive(location.pathname, item.path);
-                        return (
+                      {navItems.map((item) =>
+                        item.hidden ? (
+                          <div key={item.path} className="h-9" />
+                        ) : (
                           <Link
                             key={item.path}
                             to={item.path}
                             className={cn(
                               'flex items-center space-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
-                              active && 'bg-primary/10 text-primary'
+                              isNavItemActive(location.pathname, item.path) && 'bg-primary/10 text-primary'
                             )}
                             onClick={() => setMobileMenuOpen(false)}
                           >
                             {item.icon}
                             <span>{item.label}</span>
                           </Link>
-                        );
-                      })}
+                        )
+                      )}
                     </nav>
                   </ScrollArea>
 

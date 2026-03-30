@@ -18,10 +18,12 @@ import {
   CheckCircle,
   UserPlus,
   Loader2,
-  X,
   Store,
   Wifi,
+  Printer,
+  ScanLine,
 } from 'lucide-react';
+import { OrderReceiptModal } from './OrderReceiptModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -90,6 +92,7 @@ export default function OrderDetailPage() {
   const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
   const [isAssigningStaff, setIsAssigningStaff] = useState(false);
   const [staffFetched, setStaffFetched] = useState(false);
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
 
   // Fetch single order
   useEffect(() => {
@@ -245,6 +248,10 @@ export default function OrderDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setIsReceiptOpen(true)}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print Receipt
+          </Button>
           <OrderStatusBadge status={order.status} />
           <Select
             value={order.status}
@@ -264,6 +271,12 @@ export default function OrderDetailPage() {
           </Select>
         </div>
       </div>
+
+      <OrderReceiptModal
+        open={isReceiptOpen}
+        onOpenChange={setIsReceiptOpen}
+        order={order}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column - Main Info */}
@@ -529,9 +542,11 @@ export default function OrderDetailPage() {
                 <Badge variant="outline" className="capitalize">{order.serviceLevel || 'standard'}</Badge>
               </div>
               {order.qrCode && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">QR Code</span>
-                  <span className="font-mono text-xs truncate max-w-[150px]">{order.qrCode}</span>
+                <div className="space-y-2 pt-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">QR Code</span>
+                    <span className="font-mono text-[10px] truncate max-w-[130px]">{order.qrCode}</span>
+                  </div>
                 </div>
               )}
             </CardContent>

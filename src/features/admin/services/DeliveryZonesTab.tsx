@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Edit, Trash, Plus, MapPin } from 'lucide-react';
 import { AddDeliveryZoneModal } from './AddDeliveryZoneModal';
+import { EditDeliveryZoneModal } from './EditDeliveryZoneModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ import { toast } from 'sonner';
 export function DeliveryZonesTab() {
   const { deliveryZones, isLoading, updateDeliveryZone, deleteDeliveryZone } = useServiceStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const handleToggleActive = async (zone: any) => {
@@ -112,7 +114,7 @@ export function DeliveryZonesTab() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditTarget(zone)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Zone
               </DropdownMenuItem>
@@ -141,6 +143,12 @@ export function DeliveryZonesTab() {
       </div>
 
       <AddDeliveryZoneModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
+
+      <EditDeliveryZoneModal
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        zone={editTarget}
+      />
 
       <DeleteConfirmModal
         open={!!deleteTarget}

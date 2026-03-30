@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { MoreHorizontal, Edit, Trash, Plus, Clock } from 'lucide-react';
 import { AddPickupWindowModal } from './AddPickupWindowModal';
+import { EditPickupWindowModal } from './EditPickupWindowModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 export function PickupWindowsTab() {
   const { pickupWindows, isLoading, updatePickupWindow, deletePickupWindow } = useServiceStore();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
 
   const handleToggleActive = async (pw: any) => {
@@ -114,7 +116,7 @@ export function PickupWindowsTab() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditTarget(pw)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Window
               </DropdownMenuItem>
@@ -143,6 +145,12 @@ export function PickupWindowsTab() {
       </div>
 
       <AddPickupWindowModal open={isAddModalOpen} onOpenChange={setIsAddModalOpen} />
+
+      <EditPickupWindowModal
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        pickupWindow={editTarget}
+      />
 
       <DeleteConfirmModal
         open={!!deleteTarget}

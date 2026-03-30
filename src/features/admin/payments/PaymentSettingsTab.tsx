@@ -48,8 +48,9 @@ export function PaymentSettingsTab() {
   // Payment method configuration
   const paymentMethods = [
     { method: PaymentMethod.CASH, label: 'Cash', icon: <DollarSign className="h-4 w-4" /> },
-    { method: PaymentMethod.CARD, label: 'Card Payment', icon: <CreditCard className="h-4 w-4" /> },
-    { method: PaymentMethod.BANK_TRANSFER, label: 'Bank Transfer', icon: <Wallet className="h-4 w-4" /> },
+    { method: PaymentMethod.PAYSTACK, label: 'Paystack', icon: <CreditCard className="h-4 w-4" /> },
+    { method: PaymentMethod.TRANSFER, label: 'Bank Transfer', icon: <Wallet className="h-4 w-4" /> },
+    { method: PaymentMethod.LENCO, label: 'Lenco', icon: <Wallet className="h-4 w-4" /> },
     { method: PaymentMethod.WALLET, label: 'Wallet', icon: <Wallet className="h-4 w-4" /> },
     { method: PaymentMethod.POS, label: 'POS', icon: <Smartphone className="h-4 w-4" /> },
   ];

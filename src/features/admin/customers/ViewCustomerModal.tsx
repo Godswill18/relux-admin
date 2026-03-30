@@ -41,12 +41,16 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
   const customerId = customerDoc?._id || customerDoc?.id;
 
   useEffect(() => {
-    if (!open || !customerId) return;
+    if (!open) return;
     setWalletBalance(null);
+    if (!customerId) {
+      setWalletBalance(0);
+      return;
+    }
     setWalletLoading(true);
     fetchWallet(customerId)
       .then((wallet) => setWalletBalance(wallet?.balance ?? 0))
-      .catch(() => setWalletBalance(null))
+      .catch(() => setWalletBalance(0))
       .finally(() => setWalletLoading(false));
   }, [open, customerId, fetchWallet]);
 

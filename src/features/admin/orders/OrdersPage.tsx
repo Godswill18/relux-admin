@@ -5,8 +5,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
-import { Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus } from 'lucide-react';
+import { Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine, CheckCircle2 } from 'lucide-react';
 import { CreateOrderModal } from './CreateOrderModal';
+import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -39,6 +40,7 @@ export default function OrdersPage() {
   const canAssign = useHasPermission(Permission.ASSIGN_STAFF);
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -209,15 +211,26 @@ export default function OrdersPage() {
           <h1 className="text-3xl font-bold">Orders</h1>
           <p className="text-muted-foreground">Manage all laundry orders</p>
         </div>
-        {canCreate && (
-          <Button onClick={() => setIsCreateModalOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Order
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => navigate('/admin/orders/delivered')}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Delivered
           </Button>
-        )}
+          <Button variant="outline" onClick={() => setIsScannerOpen(true)}>
+            <ScanLine className="mr-2 h-4 w-4" />
+            Scan Delivery
+          </Button>
+          {canCreate && (
+            <Button onClick={() => setIsCreateModalOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Order
+            </Button>
+          )}
+        </div>
       </div>
 
       <CreateOrderModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} />
+      <BarcodeScannerModal open={isScannerOpen} onOpenChange={setIsScannerOpen} />
 
       <ConfirmDialog
         open={!!deleteTarget}
