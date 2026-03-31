@@ -36,16 +36,22 @@ interface LoyaltyData {
   recentLedger: { type: string; points: number; reason: string; createdAt: string }[];
 }
 
+const PAGE_LIMIT = 20;
+
 interface CustomerState {
   // State
   customers: Customer[];
   selectedCustomer: Customer | null;
   filters: CustomerFilters;
   isLoading: boolean;
+  isFetchingMore: boolean;
+  hasMore: boolean;
+  currentPage: number;
   error: string | null;
 
   // Actions
   fetchCustomers: () => Promise<void>;
+  loadMoreCustomers: () => Promise<void>;
   createCustomer: (customerData: Partial<Customer>) => Promise<Customer | null>;
   updateCustomer: (customerId: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (customerId: string) => Promise<void>;
@@ -77,34 +83,37 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     search: '',
   },
   isLoading: false,
+  isFetchingMore: false,
+  hasMore: false,
+  currentPage: 1,
   error: null,
 
-  // Fetch customers
+  // Fetch customers (resets to page 1)
   fetchCustomers: async () => {
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, currentPage: 1, hasMore: false });
 
       const { filters } = get();
-      const params: any = {};
+      const params: any = { page: 1, limit: PAGE_LIMIT };
 
-      if (filters.status && filters.status !== 'all') {
-        params.status = filters.status;
-      }
-      if (filters.loyaltyTier && filters.loyaltyTier !== 'all') {
-        params.loyaltyTier = filters.loyaltyTier;
-      }
-      if (filters.search) {
-        params.search = filters.search;
-      }
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.loyaltyTier && filters.loyaltyTier !== 'all') params.loyaltyTier = filters.loyaltyTier;
+      if (filters.search) params.search = filters.search;
 
       const response = await apiClient.get('/customers', { params });
 
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.customers || [];
-        set({ customers: list, isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          customers: list,
+          isLoading: false,
+          currentPage: 1,
+          hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+        });
       } else {
-        set({ customers: [], isLoading: false });
+        set({ customers: [], isLoading: false, hasMore: false });
       }
     } catch (error: any) {
       console.error('Error fetching customers:', error);
@@ -112,7 +121,43 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         error: error.response?.data?.message || error.message || 'Failed to fetch customers',
         customers: [],
         isLoading: false,
+        hasMore: false,
       });
+    }
+  },
+
+  // Load next page and append
+  loadMoreCustomers: async () => {
+    const { isFetchingMore, hasMore, currentPage, filters } = get();
+    if (isFetchingMore || !hasMore) return;
+
+    try {
+      set({ isFetchingMore: true });
+      const nextPage = currentPage + 1;
+      const params: any = { page: nextPage, limit: PAGE_LIMIT };
+
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.loyaltyTier && filters.loyaltyTier !== 'all') params.loyaltyTier = filters.loyaltyTier;
+      if (filters.search) params.search = filters.search;
+
+      const response = await apiClient.get('/customers', { params });
+
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.customers || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          customers: [...state.customers, ...list],
+          currentPage: nextPage,
+          hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+          isFetchingMore: false,
+        }));
+      } else {
+        set({ isFetchingMore: false, hasMore: false });
+      }
+    } catch (error: any) {
+      console.error('Error loading more customers:', error);
+      set({ isFetchingMore: false });
     }
   },
 

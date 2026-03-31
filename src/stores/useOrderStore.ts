@@ -17,16 +17,22 @@ interface OrderFilters {
   search?: string;
 }
 
+const PAGE_LIMIT = 20;
+
 interface OrderState {
   // State
   orders: Order[];
   selectedOrder: Order | null;
   filters: OrderFilters;
   isLoading: boolean;
+  isFetchingMore: boolean;
+  hasMore: boolean;
+  currentPage: number;
   error: string | null;
 
   // Actions
   fetchOrders: () => Promise<void>;
+  loadMoreOrders: () => Promise<void>;
   createOrder: (orderData: Partial<Order>) => Promise<Order | null>;
   updateOrder: (orderId: string, orderData: Partial<Order>) => Promise<void>;
   setSelectedOrder: (order: Order | null) => void;
@@ -51,33 +57,37 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     search: '',
   },
   isLoading: false,
+  isFetchingMore: false,
+  hasMore: false,
+  currentPage: 1,
   error: null,
 
-  // Fetch orders
+  // Fetch orders (resets to page 1)
   fetchOrders: async () => {
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, currentPage: 1, hasMore: false });
 
       const { filters } = get();
-      const params: any = {};
+      const params: any = { page: 1, limit: PAGE_LIMIT };
 
-      if (filters.status && filters.status !== 'all') {
-        params.status = filters.status;
-      }
-      if (filters.paymentStatus && filters.paymentStatus !== 'all') {
-        params.paymentStatus = filters.paymentStatus;
-      }
-      if (filters.search) {
-        params.search = filters.search;
-      }
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.paymentStatus && filters.paymentStatus !== 'all') params.paymentStatus = filters.paymentStatus;
+      if (filters.search) params.search = filters.search;
 
       const response = await apiClient.get('/orders', { params });
 
       if (response.data.success) {
         const raw = response.data.data;
-        set({ orders: Array.isArray(raw) ? raw : raw?.orders || [], isLoading: false });
+        const list = Array.isArray(raw) ? raw : raw?.orders || [];
+        const pagination = response.data.pagination;
+        set({
+          orders: list,
+          isLoading: false,
+          currentPage: 1,
+          hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+        });
       } else {
-        set({ orders: [], isLoading: false });
+        set({ orders: [], isLoading: false, hasMore: false });
       }
     } catch (error: any) {
       console.error('Error fetching orders:', error);
@@ -85,7 +95,43 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         error: error.response?.data?.message || error.message || 'Failed to fetch orders',
         orders: [],
         isLoading: false,
+        hasMore: false,
       });
+    }
+  },
+
+  // Load next page and append
+  loadMoreOrders: async () => {
+    const { isFetchingMore, hasMore, currentPage, filters } = get();
+    if (isFetchingMore || !hasMore) return;
+
+    try {
+      set({ isFetchingMore: true });
+      const nextPage = currentPage + 1;
+      const params: any = { page: nextPage, limit: PAGE_LIMIT };
+
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.paymentStatus && filters.paymentStatus !== 'all') params.paymentStatus = filters.paymentStatus;
+      if (filters.search) params.search = filters.search;
+
+      const response = await apiClient.get('/orders', { params });
+
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.orders || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          orders: [...state.orders, ...list],
+          currentPage: nextPage,
+          hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+          isFetchingMore: false,
+        }));
+      } else {
+        set({ isFetchingMore: false, hasMore: false });
+      }
+    } catch (error: any) {
+      console.error('Error loading more orders:', error);
+      set({ isFetchingMore: false });
     }
   },
 

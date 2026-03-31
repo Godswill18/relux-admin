@@ -27,16 +27,22 @@ interface PaymentFilters {
   search?: string;
 }
 
+const PAGE_LIMIT = 20;
+
 interface PaymentState {
   // State
   payments: Payment[];
   settings: PaymentSettings;
   filters: PaymentFilters;
   isLoading: boolean;
+  isFetchingMore: boolean;
+  hasMore: boolean;
+  currentPage: number;
   error: string | null;
 
   // Actions
   fetchPayments: () => Promise<void>;
+  loadMorePayments: () => Promise<void>;
   fetchSettings: () => Promise<void>;
   updateSettings: (settings: Partial<PaymentSettings>) => Promise<void>;
   setFilters: (filters: Partial<PaymentFilters>) => void;
@@ -60,42 +66,75 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
     search: '',
   },
   isLoading: false,
+  isFetchingMore: false,
+  hasMore: false,
+  currentPage: 1,
   error: null,
 
-  // Fetch payments
+  // Fetch payments (resets to page 1)
   fetchPayments: async () => {
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, currentPage: 1, hasMore: false });
 
       const { filters } = get();
-      const params = new URLSearchParams();
+      const params: any = { page: 1, limit: PAGE_LIMIT };
 
-      if (filters.status && filters.status !== 'all') {
-        params.append('state', filters.status);
-      }
-      if (filters.method && filters.method !== 'all') {
-        params.append('method', filters.method);
-      }
-      if (filters.search) {
-        params.append('search', filters.search);
-      }
+      if (filters.status && filters.status !== 'all') params.state = filters.status;
+      if (filters.method && filters.method !== 'all') params.method = filters.method;
+      if (filters.search) params.search = filters.search;
 
-      const response = await apiClient.get('/payments', {
-        params: Object.fromEntries(params)
-      });
+      const response = await apiClient.get('/payments', { params });
 
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.payments || [];
-        set({ payments: list, isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          payments: list,
+          isLoading: false,
+          currentPage: 1,
+          hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+        });
       } else {
         throw new Error(response.data.error?.message || 'Failed to fetch payments');
       }
     } catch (error: any) {
-      set({
-        error: error.message || 'Failed to fetch payments',
-        isLoading: false,
-      });
+      set({ error: error.message || 'Failed to fetch payments', isLoading: false, hasMore: false });
+    }
+  },
+
+  // Load next page and append
+  loadMorePayments: async () => {
+    const { isFetchingMore, hasMore, currentPage, filters } = get();
+    if (isFetchingMore || !hasMore) return;
+
+    try {
+      set({ isFetchingMore: true });
+      const nextPage = currentPage + 1;
+      const params: any = { page: nextPage, limit: PAGE_LIMIT };
+
+      if (filters.status && filters.status !== 'all') params.state = filters.status;
+      if (filters.method && filters.method !== 'all') params.method = filters.method;
+      if (filters.search) params.search = filters.search;
+
+      const response = await apiClient.get('/payments', { params });
+
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.payments || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          payments: [...state.payments, ...list],
+          currentPage: nextPage,
+          hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+          isFetchingMore: false,
+        }));
+      } else {
+        set({ isFetchingMore: false, hasMore: false });
+      }
+    } catch (error: any) {
+      console.error('Error loading more payments:', error);
+      set({ isFetchingMore: false });
     }
   },
 

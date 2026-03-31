@@ -6,12 +6,9 @@ import { ColumnDef } from '@tanstack/react-table';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Card, CardContent } from '@/components/ui/card';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { toast } from 'sonner';
-
-// ============================================================================
-// SERVICE LEVELS TAB COMPONENT
-// ============================================================================
 
 export function ServiceLevelsTab() {
   const { serviceLevels, isLoading, updateServiceLevel } = useServiceStore();
@@ -29,6 +26,8 @@ export function ServiceLevelsTab() {
     if (!val) return 1;
     return val > 10 ? val / 100 : val;
   };
+
+  const levels: any[] = Array.isArray(serviceLevels) ? serviceLevels : [];
 
   const columns: ColumnDef<any>[] = [
     {
@@ -65,10 +64,7 @@ export function ServiceLevelsTab() {
         const level = row.original;
         return (
           <div className="flex items-center gap-2">
-            <Switch
-              checked={level.isActive}
-              onCheckedChange={() => handleToggleActive(level)}
-            />
+            <Switch checked={level.isActive} onCheckedChange={() => handleToggleActive(level)} />
             <Badge variant={level.isActive ? 'default' : 'secondary'}>
               {level.isActive ? 'Active' : 'Inactive'}
             </Badge>
@@ -80,35 +76,54 @@ export function ServiceLevelsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-3">
-        {Array.isArray(serviceLevels) ? serviceLevels.map((level: any) => (
-          <div key={level.id} className="p-4 border rounded-lg space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{level.name}</h3>
-              <Badge variant={level.isActive ? 'default' : 'secondary'}>
-                {level.isActive ? 'Active' : 'Inactive'}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>Multiplier:</span>
-              <span className="font-medium">{formatMultiplier(level.priceMultiplier)}x</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span>Duration:</span>
-              <span className="font-medium">{level.durationHours || 0} hours</span>
-            </div>
-          </div>
-        )) : null}
+      {/* ── Mobile cards (shown on all screens as the primary view, grid on sm+) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:hidden">
+        {isLoading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="animate-pulse"><CardContent className="p-4 h-24" /></Card>
+          ))
+        ) : levels.map((level) => {
+          const display = formatMultiplier(level.priceMultiplier);
+          return (
+            <Card key={level.id}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold truncate">{level.name}</p>
+                  <Badge variant={level.isActive ? 'default' : 'secondary'} className="text-xs shrink-0">
+                    {level.isActive ? 'Active' : 'Inactive'}
+                  </Badge>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Multiplier</span>
+                    <span className="font-medium">{display}x (+{((display - 1) * 100).toFixed(0)}%)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Duration</span>
+                    <span className="font-medium">{level.durationHours || 0}h</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pt-0.5">
+                  <Switch checked={level.isActive} onCheckedChange={() => handleToggleActive(level)} />
+                  <span className="text-xs text-muted-foreground">Toggle active</span>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
-      <DataTable
-        columns={columns}
-        data={Array.isArray(serviceLevels) ? serviceLevels : []}
-        searchKey="name"
-        searchPlaceholder="Search service levels..."
-        isLoading={isLoading}
-        showPagination={false}
-      />
+      {/* ── Desktop table ────────────────────────────────────────────────────── */}
+      <div className="hidden md:block">
+        <DataTable
+          columns={columns}
+          data={levels}
+          searchKey="name"
+          searchPlaceholder="Search service levels..."
+          isLoading={isLoading}
+          showPagination={false}
+        />
+      </div>
     </div>
   );
 }

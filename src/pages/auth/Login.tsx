@@ -156,12 +156,12 @@ export default function Login() {
               </Link>
             </div>
           </form>
-          <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
+          {/* <div className="mt-4 p-3 bg-muted/50 rounded-lg text-xs text-muted-foreground">
             <p className="font-semibold mb-1">Demo Credentials:</p>
             <p>Admin: admin@reluxlaundry.com / admin123</p>
             <p>Manager: manager@reluxlaundry.com / manager123</p>
             <p>Staff: staff@reluxlaundry.com / staff123</p>
-          </div>
+          </div> */}
           <div className="mt-6 text-center text-sm">
             <span className="text-muted-foreground">Don't have an account? </span>
             <Link to="/signup" className="text-primary hover:underline font-medium">

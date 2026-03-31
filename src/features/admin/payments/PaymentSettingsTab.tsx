@@ -189,7 +189,7 @@ export function PaymentSettingsTab() {
 
       {/* Save Button */}
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto">
           <Save className="mr-2 h-4 w-4" />
           {isSaving ? 'Saving...' : 'Save Settings'}
         </Button>

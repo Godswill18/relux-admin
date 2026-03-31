@@ -31,34 +31,27 @@ import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { useStaffStore } from '@/stores/useStaffStore';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const SERVICE_TYPES = [
-  { value: 'wash-fold', label: 'Wash & Fold' },
-  { value: 'wash-iron', label: 'Wash & Iron' },
-  { value: 'iron-only', label: 'Iron Only' },
-  { value: 'dry-clean', label: 'Dry Clean' },
-] as const;
+import { Loader2, Plus, Trash2, Wand2, UserSearch } from 'lucide-react';
 
 // ============================================================================
 // VALIDATION SCHEMA
 // ============================================================================
 
 const orderItemSchema = z.object({
-  itemType:    z.string().min(1, 'Item name required'),
-  serviceType: z.string().min(1, 'Service type required'),
+  serviceId:   z.string().min(1, 'Service required'),
+  itemType:    z.string().min(1, 'Item required'),
   quantity:    z.coerce.number().min(1, 'Min quantity is 1'),
   unitPrice:   z.coerce.number().min(0, 'Price must be 0 or more'),
   description: z.string().optional(),
 });
 
 const createOrderSchema = z.object({
-  customerId:          z.string().min(1, 'Customer is required'),
-  serviceLevel:        z.enum(['standard', 'express', 'premium']),
+  // walkInCustomer is what the backend requires for all staff-created orders
+  walkInCustomer: z.object({
+    name:  z.string().min(1, 'Customer name is required'),
+    phone: z.string().min(1, 'Customer phone is required'),
+  }),
+  serviceLevel:        z.string().min(1, 'Service level required'),
   orderType:           z.enum(['walk-in', 'pickup-delivery']),
   items:               z.array(orderItemSchema).min(1, 'At least one item is required'),
   pickupAddress: z.object({
@@ -91,7 +84,10 @@ interface CreateOrderModalProps {
 export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) {
   const { createOrder } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
-  const { services, categories, fetchServices, fetchCategories } = useServiceStore();
+  const {
+    services, categories, serviceLevels,
+    fetchServices, fetchCategories, fetchServiceLevels,
+  } = useServiceStore();
   const { staff, fetchStaff } = useStaffStore();
   const [customerSearch, setCustomerSearch] = useState('');
 
@@ -100,17 +96,22 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
       fetchCustomers();
       fetchServices();
       fetchCategories();
+      fetchServiceLevels();
       fetchStaff();
     }
-  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchStaff]);
+  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchServiceLevels, fetchStaff]);
+
+  // Active services and levels
+  const activeServices = (Array.isArray(services) ? services : []).filter((s) => s.isActive !== false);
+  const activeLevels   = (Array.isArray(serviceLevels) ? serviceLevels : []);
 
   const form = useForm<CreateOrderForm>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
-      customerId:          '',
+      walkInCustomer:      { name: '', phone: '' },
       serviceLevel:        'standard',
       orderType:           'walk-in',
-      items:               [{ itemType: '', serviceType: 'wash-fold', quantity: 1, unitPrice: 0, description: '' }],
+      items:               [{ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' }],
       paymentMethod:       'cash',
       specialInstructions: '',
       discount:            0,
@@ -138,31 +139,68 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
   const tax         = Math.round(taxable * 0.075);
   const total       = taxable + tax;
 
-  // Filter customers by search
-  const filteredCustomers = Array.isArray(customers)
-    ? customers
-        .filter((c) =>
-          customerSearch
-            ? c.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-              c.phone?.includes(customerSearch)
-            : true
-        )
-        .slice(0, 50)
-    : [];
+  // ── Auto-fill customer fields from existing customer dropdown ───────────
+  const filteredCustomers = (Array.isArray(customers) ? customers : [])
+    .filter((c) =>
+      customerSearch
+        ? c.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
+          c.phone?.includes(customerSearch)
+        : true
+    )
+    .slice(0, 50);
+
+  const handleSelectExistingCustomer = (customerId: string) => {
+    const customer = (Array.isArray(customers) ? customers : []).find(
+      (c) => (c.id || c._id) === customerId || (c.customerId?._id || c.customerId) === customerId
+    );
+    if (customer) {
+      form.setValue('walkInCustomer.name',  customer.name  || '', { shouldValidate: true });
+      form.setValue('walkInCustomer.phone', customer.phone || '', { shouldValidate: true });
+    }
+  };
+
+  // ── Helper: get categories for a given service ID ───────────────────────
+  const getCategoriesForService = (serviceId: string) => {
+    if (!serviceId) return [];
+    return (Array.isArray(categories) ? categories : []).filter((c) => {
+      const catServiceId = (c.serviceId?._id || c.serviceId)?.toString();
+      return catServiceId === serviceId && c.isActive !== false;
+    });
+  };
+
+  // ── When service changes: clear item + reset price ──────────────────────
+  const handleServiceChange = (index: number, serviceId: string) => {
+    form.setValue(`items.${index}.serviceId`, serviceId);
+    form.setValue(`items.${index}.itemType`, '');
+    form.setValue(`items.${index}.unitPrice`, 0);
+  };
+
+  // ── When item (category) changes: auto-fill unit price ──────────────────
+  const handleItemChange = (index: number, categoryName: string) => {
+    form.setValue(`items.${index}.itemType`, categoryName);
+    const category = (Array.isArray(categories) ? categories : []).find(
+      (c) => c.name === categoryName
+    );
+    if (category?.basePrice != null) {
+      form.setValue(`items.${index}.unitPrice`, category.basePrice, { shouldValidate: true });
+    }
+  };
 
   const onSubmit = async (data: CreateOrderForm) => {
     try {
-      // Derive order-level serviceType from the first item
-      const primaryServiceType = data.items[0].serviceType;
+      const resolveServiceType = (serviceId: string) =>
+        activeServices.find((s) => s.id === serviceId)?.name || serviceId;
+
+      const primaryServiceType = resolveServiceType(data.items[0].serviceId);
 
       const orderPayload: any = {
-        customerId:          data.customerId,
+        walkInCustomer:      data.walkInCustomer,
         serviceType:         primaryServiceType,
         serviceLevel:        data.serviceLevel,
         orderType:           data.orderType,
         items:               data.items.map((item) => ({
           itemType:    item.itemType,
-          serviceType: item.serviceType,
+          serviceType: resolveServiceType(item.serviceId),
           quantity:    item.quantity,
           unitPrice:   item.unitPrice,
           total:       item.quantity * item.unitPrice,
@@ -192,6 +230,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
       await createOrder(orderPayload);
       toast.success('Order created successfully');
       form.reset();
+      setCustomerSearch('');
       onOpenChange(false);
     } catch {
       toast.error('Failed to create order');
@@ -212,39 +251,71 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
           {/* ── Customer ──────────────────────────────────────────────── */}
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">Customer</h3>
-            <Input
-              placeholder="Search customers by name or phone..."
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-            />
-            <FormField
-              control={form.control}
-              name="customerId"
-              render={({ field }) => (
-                <FormItem>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a customer" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {filteredCustomers.map((c) => {
-                        const customerDocId = c.customerId?._id || c.customerId;
-                        const userId        = c.id || c._id;
-                        const valueId       = customerDocId || userId;
-                        return (
-                          <SelectItem key={userId} value={valueId}>
-                            {c.name} — {c.phone}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
+
+            {/* Quick-fill from existing customer */}
+            <div className="rounded-lg border border-dashed p-3 space-y-2 bg-muted/30">
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <UserSearch className="h-3.5 w-3.5" />
+                Autofill from existing customer (optional)
+              </p>
+              <Input
+                placeholder="Search by name or phone…"
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="h-8 text-sm"
+              />
+              {customerSearch && filteredCustomers.length > 0 && (
+                <div className="rounded-md border bg-background shadow-sm max-h-40 overflow-y-auto">
+                  {filteredCustomers.map((c) => {
+                    const cid = c.customerId?._id || c.customerId || c.id || c._id;
+                    return (
+                      <button
+                        key={c.id || c._id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors"
+                        onClick={() => {
+                          handleSelectExistingCustomer(cid);
+                          setCustomerSearch('');
+                        }}
+                      >
+                        <span className="font-medium">{c.name}</span>
+                        <span className="text-muted-foreground ml-2">{c.phone}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            />
+            </div>
+
+            {/* Required customer fields */}
+            <div className="grid grid-cols-2 gap-3">
+              <FormField
+                control={form.control}
+                name="walkInCustomer.name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Customer Name <span className="text-destructive">*</span></FormLabel>
+                    <FormControl>
+                      <Input placeholder="Full name" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="walkInCustomer.phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone Number <span className="text-destructive">*</span></FormLabel>
+                    <FormControl>
+                      <Input placeholder="08012345678" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
           </div>
 
           <Separator />
@@ -257,14 +328,24 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Service Level</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="express">Express</SelectItem>
-                      <SelectItem value="premium">Premium</SelectItem>
+                      {activeLevels.length > 0 ? (
+                        activeLevels.map((lvl) => (
+                          <SelectItem key={lvl.id || lvl.level} value={lvl.level || lvl.id}>
+                            {lvl.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <>
+                          <SelectItem value="standard">Standard</SelectItem>
+                          <SelectItem value="express">Express</SelectItem>
+                          <SelectItem value="premium">Premium</SelectItem>
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -298,13 +379,19 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
           {/* ── Items ─────────────────────────────────────────────────── */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Items</h3>
+              <div>
+                <h3 className="text-sm font-semibold">Items</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                  <Wand2 className="h-3 w-3" />
+                  Unit price auto-fills from the service price list
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  append({ itemType: '', serviceType: 'wash-fold', quantity: 1, unitPrice: 0, description: '' })
+                  append({ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' })
                 }
               >
                 <Plus className="mr-1 h-3 w-3" />
@@ -314,131 +401,171 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
 
             {/* Column headers */}
             <div className="grid grid-cols-12 gap-2 px-1">
-              <span className="col-span-3 text-xs text-muted-foreground font-medium">Item</span>
               <span className="col-span-3 text-xs text-muted-foreground font-medium">Service</span>
+              <span className="col-span-3 text-xs text-muted-foreground font-medium">Item</span>
               <span className="col-span-2 text-xs text-muted-foreground font-medium">Qty</span>
               <span className="col-span-2 text-xs text-muted-foreground font-medium">Unit Price (₦)</span>
               <span className="col-span-1 text-xs text-muted-foreground font-medium text-right">Total</span>
               <span className="col-span-1" />
             </div>
 
-            {fields.map((field, index) => (
-              <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-                {/* Item name — service category dropdown */}
-                <div className="col-span-3">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.itemType`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Select item" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {categories.filter((c) => c.isActive !== false).length === 0 ? (
-                              <SelectItem value="__none" disabled>
-                                No categories found
-                              </SelectItem>
-                            ) : (
-                              categories
-                                .filter((c) => c.isActive !== false)
-                                .map((c) => (
-                                  <SelectItem key={c.id || c._id} value={c.name}>
-                                    {c.name}
+            {fields.map((field, index) => {
+              const selectedServiceId    = watchItems[index]?.serviceId || '';
+              const selectedItemType     = watchItems[index]?.itemType || '';
+              const categoriesForService = getCategoriesForService(selectedServiceId);
+              const matchedCategory      = categoriesForService.find((c) => c.name === selectedItemType);
+              const isAutoFilled         = matchedCategory && matchedCategory.basePrice === watchItems[index]?.unitPrice;
+
+              return (
+                <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
+
+                  {/* Service dropdown */}
+                  <div className="col-span-3">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.serviceId`}
+                      render={({ field: f }) => (
+                        <FormItem>
+                          <Select
+                            value={f.value}
+                            onValueChange={(val) => handleServiceChange(index, val)}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder="Service" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {activeServices.length === 0 ? (
+                                <SelectItem value="__none" disabled>
+                                  No services — add on Services page
+                                </SelectItem>
+                              ) : (
+                                activeServices.map((s) => (
+                                  <SelectItem key={s.id || s._id} value={s.id || s._id}>
+                                    {s.name}
                                   </SelectItem>
                                 ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
-                {/* Per-item service type */}
-                <div className="col-span-3">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.serviceType`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <Select value={field.value} onValueChange={field.onChange}>
+                  {/* Item dropdown — filtered by selected service */}
+                  <div className="col-span-3">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.itemType`}
+                      render={({ field: f }) => (
+                        <FormItem>
+                          <Select
+                            value={f.value}
+                            onValueChange={(val) => handleItemChange(index, val)}
+                            disabled={!selectedServiceId}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="h-9">
+                                <SelectValue placeholder={selectedServiceId ? 'Select item' : 'Pick service first'} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {categoriesForService.length === 0 ? (
+                                <SelectItem value="__none" disabled>
+                                  No items for this service
+                                </SelectItem>
+                              ) : (
+                                categoriesForService.map((c) => (
+                                  <SelectItem key={c.id || c._id} value={c.name}>
+                                    {c.name}
+                                    <span className="text-xs text-muted-foreground ml-1.5">
+                                      ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
+                                    </span>
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Quantity */}
+                  <div className="col-span-2">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.quantity`}
+                      render={({ field: f }) => (
+                        <FormItem>
                           <FormControl>
-                            <SelectTrigger className="h-9">
-                              <SelectValue placeholder="Service" />
-                            </SelectTrigger>
+                            <Input type="number" min={1} className="h-9" {...f} />
                           </FormControl>
-                          <SelectContent>
-                            {SERVICE_TYPES.map((s) => (
-                              <SelectItem key={s.value} value={s.value}>
-                                {s.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Unit price — auto-filled, editable override */}
+                  <div className="col-span-2">
+                    <FormField
+                      control={form.control}
+                      name={`items.${index}.unitPrice`}
+                      render={({ field: f }) => (
+                        <FormItem>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                min={0}
+                                className={`h-9 ${isAutoFilled ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : ''}`}
+                                {...f}
+                              />
+                              {isAutoFilled && (
+                                <Wand2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-500 pointer-events-none" />
+                              )}
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  {/* Row subtotal */}
+                  <div className="col-span-1 text-sm font-medium text-right pt-2">
+                    ₦{((watchItems[index]?.quantity || 0) * (watchItems[index]?.unitPrice || 0)).toLocaleString()}
+                  </div>
+
+                  {/* Delete */}
+                  <div className="col-span-1 flex justify-center pt-1">
+                    {fields.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => remove(index)}
+                        className="text-destructive h-8 w-8 p-0"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     )}
-                  />
+                  </div>
                 </div>
+              );
+            })}
 
-                {/* Quantity */}
-                <div className="col-span-2">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.quantity`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input type="number" min={1} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Unit price */}
-                <div className="col-span-2">
-                  <FormField
-                    control={form.control}
-                    name={`items.${index}.unitPrice`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input type="number" min={0} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {/* Row subtotal */}
-                <div className="col-span-1 text-sm font-medium text-right pt-2">
-                  ₦{((watchItems[index]?.quantity || 0) * (watchItems[index]?.unitPrice || 0)).toLocaleString()}
-                </div>
-
-                {/* Delete */}
-                <div className="col-span-1 flex justify-center pt-1">
-                  {fields.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => remove(index)}
-                      className="text-destructive h-8 w-8 p-0"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
+              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                <Wand2 className="h-3 w-3" /> Green
+              </span>
+              = price from price list. Edit to override.
+            </p>
           </div>
 
           {/* ── Pickup/Delivery Addresses (conditional) ────────────────── */}

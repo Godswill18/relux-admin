@@ -109,14 +109,14 @@ export default function DeliveryConfirmPage() {
   // ── RENDER ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold">Delivery Confirmation</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold">Delivery Confirmation</h1>
           <p className="text-sm text-muted-foreground">Review order details before confirming delivery</p>
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function DeliveryConfirmPage() {
                 Confirmed by: <strong>{user?.name ?? 'Staff'}</strong>
               </p>
             </div>
-            <div className="flex gap-2 pt-2">
+            <div className="flex flex-col sm:flex-row gap-2 pt-2 w-full sm:w-auto">
               <Button variant="outline" onClick={() => navigate('/admin/orders/delivered')}>
                 View Delivered Orders
               </Button>
@@ -236,8 +236,8 @@ export default function DeliveryConfirmPage() {
                 ) : (
                   <div className="space-y-2">
                     {items.map((item, i) => (
-                      <div key={i} className="flex items-center justify-between text-sm p-2 rounded-md bg-muted/40">
-                        <div>
+                      <div key={i} className="flex items-start justify-between gap-2 text-sm p-2 rounded-md bg-muted/40">
+                        <div className="min-w-0">
                           <span className="font-medium">{item.itemType ?? '—'}</span>
                           {item.serviceType && (
                             <Badge variant="outline" className="ml-2 text-xs capitalize">
@@ -245,10 +245,10 @@ export default function DeliveryConfirmPage() {
                             </Badge>
                           )}
                         </div>
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           <span className="text-muted-foreground">× {item.quantity ?? 1}</span>
                           {item.unitPrice != null && (
-                            <span className="ml-3 font-medium">
+                            <span className="ml-2 font-medium">
                               ₦{((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}
                             </span>
                           )}

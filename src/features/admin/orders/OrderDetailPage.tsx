@@ -231,15 +231,16 @@ export default function OrderDetailPage() {
   const statusHistory = order.statusHistory || [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        {/* Left: back + title */}
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold truncate">
               {order.orderNumber || order.code || `Order #${order._id?.substring(0, 8)}`}
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -247,10 +248,11 @@ export default function OrderDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        {/* Right: actions */}
+        <div className="flex items-center gap-2 flex-wrap pl-10 sm:pl-0">
           <Button variant="outline" size="sm" onClick={() => setIsReceiptOpen(true)}>
             <Printer className="mr-2 h-4 w-4" />
-            Print Receipt
+            <span className="hidden xs:inline">Print </span>Receipt
           </Button>
           <OrderStatusBadge status={order.status} />
           <Select
@@ -258,7 +260,7 @@ export default function OrderDetailPage() {
             onValueChange={handleStatusChange}
             disabled={isUpdatingStatus}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-40 sm:w-48">
               <SelectValue placeholder="Update Status" />
             </SelectTrigger>
             <SelectContent>

@@ -44,6 +44,16 @@ const toBackend = (data: any) => {
 // TYPES
 // ============================================================================
 
+const PAGE_LIMIT = 20;
+
+interface PaginationMeta {
+  page: number;
+  hasMore: boolean;
+  isFetchingMore: boolean;
+}
+
+const defaultPagination: PaginationMeta = { page: 1, hasMore: false, isFetchingMore: false };
+
 interface ServiceState {
   services: any[];
   categories: any[];
@@ -53,11 +63,21 @@ interface ServiceState {
   isLoading: boolean;
   error: string | null;
 
+  // Per-entity pagination
+  servicesPagination: PaginationMeta;
+  categoriesPagination: PaginationMeta;
+  pickupWindowsPagination: PaginationMeta;
+  deliveryZonesPagination: PaginationMeta;
+
   fetchServices: () => Promise<void>;
+  loadMoreServices: () => Promise<void>;
   fetchCategories: () => Promise<void>;
+  loadMoreCategories: () => Promise<void>;
   fetchServiceLevels: () => Promise<void>;
   fetchPickupWindows: () => Promise<void>;
+  loadMorePickupWindows: () => Promise<void>;
   fetchDeliveryZones: () => Promise<void>;
+  loadMoreDeliveryZones: () => Promise<void>;
 
   createService: (data: any) => Promise<void>;
   updateService: (serviceId: string, data: any) => Promise<void>;
@@ -91,16 +111,30 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
   isLoading: false,
   error: null,
 
+  servicesPagination: { ...defaultPagination },
+  categoriesPagination: { ...defaultPagination },
+  pickupWindowsPagination: { ...defaultPagination },
+  deliveryZonesPagination: { ...defaultPagination },
+
   // ---- FETCH ----
 
   fetchServices: async () => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await apiClient.get('/services');
+      set({ isLoading: true, error: null, servicesPagination: { page: 1, hasMore: false, isFetchingMore: false } });
+      const response = await apiClient.get('/services', { params: { page: 1, limit: PAGE_LIMIT } });
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.services || [];
-        set({ services: list.map(normalize), isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          services: list.map(normalize),
+          isLoading: false,
+          servicesPagination: {
+            page: 1,
+            hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        });
       } else {
         set({ services: [], isLoading: false });
       }
@@ -109,19 +143,82 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
     }
   },
 
+  loadMoreServices: async () => {
+    const { servicesPagination } = get();
+    if (servicesPagination.isFetchingMore || !servicesPagination.hasMore) return;
+    const nextPage = servicesPagination.page + 1;
+    set({ servicesPagination: { ...servicesPagination, isFetchingMore: true } });
+    try {
+      const response = await apiClient.get('/services', { params: { page: nextPage, limit: PAGE_LIMIT } });
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.services || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          services: [...state.services, ...list.map(normalize)],
+          servicesPagination: {
+            page: nextPage,
+            hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        }));
+      } else {
+        set((state) => ({ servicesPagination: { ...state.servicesPagination, isFetchingMore: false, hasMore: false } }));
+      }
+    } catch {
+      set((state) => ({ servicesPagination: { ...state.servicesPagination, isFetchingMore: false } }));
+    }
+  },
+
   fetchCategories: async () => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await apiClient.get('/services/categories');
+      set({ isLoading: true, error: null, categoriesPagination: { page: 1, hasMore: false, isFetchingMore: false } });
+      const response = await apiClient.get('/services/categories', { params: { page: 1, limit: PAGE_LIMIT } });
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.categories || [];
-        set({ categories: list.map(normalize), isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          categories: list.map(normalize),
+          isLoading: false,
+          categoriesPagination: {
+            page: 1,
+            hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        });
       } else {
         set({ categories: [], isLoading: false });
       }
     } catch (error: any) {
       set({ error: error.message || 'Failed to fetch categories', categories: [], isLoading: false });
+    }
+  },
+
+  loadMoreCategories: async () => {
+    const { categoriesPagination } = get();
+    if (categoriesPagination.isFetchingMore || !categoriesPagination.hasMore) return;
+    const nextPage = categoriesPagination.page + 1;
+    set({ categoriesPagination: { ...categoriesPagination, isFetchingMore: true } });
+    try {
+      const response = await apiClient.get('/services/categories', { params: { page: nextPage, limit: PAGE_LIMIT } });
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.categories || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          categories: [...state.categories, ...list.map(normalize)],
+          categoriesPagination: {
+            page: nextPage,
+            hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        }));
+      } else {
+        set((state) => ({ categoriesPagination: { ...state.categoriesPagination, isFetchingMore: false, hasMore: false } }));
+      }
+    } catch {
+      set((state) => ({ categoriesPagination: { ...state.categoriesPagination, isFetchingMore: false } }));
     }
   },
 
@@ -143,12 +240,21 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
 
   fetchPickupWindows: async () => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await apiClient.get('/services/pickup-windows');
+      set({ isLoading: true, error: null, pickupWindowsPagination: { page: 1, hasMore: false, isFetchingMore: false } });
+      const response = await apiClient.get('/services/pickup-windows', { params: { page: 1, limit: PAGE_LIMIT } });
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.windows || [];
-        set({ pickupWindows: list.map(normalize), isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          pickupWindows: list.map(normalize),
+          isLoading: false,
+          pickupWindowsPagination: {
+            page: 1,
+            hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        });
       } else {
         set({ pickupWindows: [], isLoading: false });
       }
@@ -157,19 +263,82 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
     }
   },
 
+  loadMorePickupWindows: async () => {
+    const { pickupWindowsPagination } = get();
+    if (pickupWindowsPagination.isFetchingMore || !pickupWindowsPagination.hasMore) return;
+    const nextPage = pickupWindowsPagination.page + 1;
+    set({ pickupWindowsPagination: { ...pickupWindowsPagination, isFetchingMore: true } });
+    try {
+      const response = await apiClient.get('/services/pickup-windows', { params: { page: nextPage, limit: PAGE_LIMIT } });
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.windows || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          pickupWindows: [...state.pickupWindows, ...list.map(normalize)],
+          pickupWindowsPagination: {
+            page: nextPage,
+            hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        }));
+      } else {
+        set((state) => ({ pickupWindowsPagination: { ...state.pickupWindowsPagination, isFetchingMore: false, hasMore: false } }));
+      }
+    } catch {
+      set((state) => ({ pickupWindowsPagination: { ...state.pickupWindowsPagination, isFetchingMore: false } }));
+    }
+  },
+
   fetchDeliveryZones: async () => {
     try {
-      set({ isLoading: true, error: null });
-      const response = await apiClient.get('/services/delivery-zones');
+      set({ isLoading: true, error: null, deliveryZonesPagination: { page: 1, hasMore: false, isFetchingMore: false } });
+      const response = await apiClient.get('/services/delivery-zones', { params: { page: 1, limit: PAGE_LIMIT } });
       if (response.data.success) {
         const raw = response.data.data;
         const list = Array.isArray(raw) ? raw : raw?.zones || [];
-        set({ deliveryZones: list.map(normalizeDeliveryZone), isLoading: false });
+        const pagination = response.data.pagination;
+        set({
+          deliveryZones: list.map(normalizeDeliveryZone),
+          isLoading: false,
+          deliveryZonesPagination: {
+            page: 1,
+            hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        });
       } else {
         set({ deliveryZones: [], isLoading: false });
       }
     } catch (error: any) {
       set({ error: error.message || 'Failed to fetch delivery zones', deliveryZones: [], isLoading: false });
+    }
+  },
+
+  loadMoreDeliveryZones: async () => {
+    const { deliveryZonesPagination } = get();
+    if (deliveryZonesPagination.isFetchingMore || !deliveryZonesPagination.hasMore) return;
+    const nextPage = deliveryZonesPagination.page + 1;
+    set({ deliveryZonesPagination: { ...deliveryZonesPagination, isFetchingMore: true } });
+    try {
+      const response = await apiClient.get('/services/delivery-zones', { params: { page: nextPage, limit: PAGE_LIMIT } });
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.zones || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          deliveryZones: [...state.deliveryZones, ...list.map(normalizeDeliveryZone)],
+          deliveryZonesPagination: {
+            page: nextPage,
+            hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+            isFetchingMore: false,
+          },
+        }));
+      } else {
+        set((state) => ({ deliveryZonesPagination: { ...state.deliveryZonesPagination, isFetchingMore: false, hasMore: false } }));
+      }
+    } catch {
+      set((state) => ({ deliveryZonesPagination: { ...state.deliveryZonesPagination, isFetchingMore: false } }));
     }
   },
 

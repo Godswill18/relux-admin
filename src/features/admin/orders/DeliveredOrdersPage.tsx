@@ -120,22 +120,20 @@ export default function DeliveredOrdersPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/admin/orders')}>
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate('/admin/orders')}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <CheckCircle2 className="h-6 w-6 text-green-500" />
-            Delivered Orders
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6 text-green-500 shrink-0" />
+            <span className="truncate">Delivered Orders</span>
           </h1>
-          <p className="text-sm text-muted-foreground">
-            All orders confirmed as delivered
-          </p>
+          <p className="text-sm text-muted-foreground">All orders confirmed as delivered</p>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Delivered Today</CardTitle>

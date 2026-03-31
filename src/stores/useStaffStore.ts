@@ -16,6 +16,8 @@ interface StaffFilters {
   search?: string;
 }
 
+const PAGE_LIMIT = 20;
+
 interface StaffState {
   // State
   staff: Staff[];
@@ -23,11 +25,15 @@ interface StaffState {
   selectedCompensation: StaffCompensation | null;
   filters: StaffFilters;
   isLoading: boolean;
+  isFetchingMore: boolean;
+  hasMore: boolean;
+  currentPage: number;
   isLoadingCompensation: boolean;
   error: string | null;
 
   // Actions
   fetchStaff: () => Promise<void>;
+  loadMoreStaff: () => Promise<void>;
   setSelectedStaff: (staff: Staff | null) => void;
   setFilters: (filters: Partial<StaffFilters>) => void;
   createStaff: (data: Partial<Staff>) => Promise<void>;
@@ -56,41 +62,74 @@ export const useStaffStore = create<StaffState>((set, get) => ({
     search: '',
   },
   isLoading: false,
+  isFetchingMore: false,
+  hasMore: false,
+  currentPage: 1,
   isLoadingCompensation: false,
   error: null,
 
-  // Fetch staff
+  // Fetch staff (resets to page 1)
   fetchStaff: async () => {
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, currentPage: 1, hasMore: false });
 
       const { filters } = get();
-      const params = new URLSearchParams();
+      const params: any = { page: 1, limit: PAGE_LIMIT };
 
-      if (filters.role && filters.role !== 'all') {
-        params.append('role', filters.role);
-      }
-      if (filters.status && filters.status !== 'all') {
-        params.append('status', filters.status);
-      }
-      if (filters.search) {
-        params.append('search', filters.search);
-      }
+      if (filters.role && filters.role !== 'all') params.role = filters.role;
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.search) params.search = filters.search;
 
-      const response = await apiClient.get('/staff', {
-        params: Object.fromEntries(params)
-      });
+      const response = await apiClient.get('/staff', { params });
 
       if (response.data.success) {
-        set({ staff: response.data.data || [], isLoading: false });
+        const list = response.data.data || [];
+        const pagination = response.data.pagination;
+        set({
+          staff: list,
+          isLoading: false,
+          currentPage: 1,
+          hasMore: pagination ? pagination.page < pagination.pages : list.length === PAGE_LIMIT,
+        });
       } else {
         throw new Error(response.data.error?.message || 'Failed to fetch staff');
       }
     } catch (error: any) {
-      set({
-        error: error.message || 'Failed to fetch staff',
-        isLoading: false,
-      });
+      set({ error: error.message || 'Failed to fetch staff', isLoading: false, hasMore: false });
+    }
+  },
+
+  // Load next page and append
+  loadMoreStaff: async () => {
+    const { isFetchingMore, hasMore, currentPage, filters } = get();
+    if (isFetchingMore || !hasMore) return;
+
+    try {
+      set({ isFetchingMore: true });
+      const nextPage = currentPage + 1;
+      const params: any = { page: nextPage, limit: PAGE_LIMIT };
+
+      if (filters.role && filters.role !== 'all') params.role = filters.role;
+      if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.search) params.search = filters.search;
+
+      const response = await apiClient.get('/staff', { params });
+
+      if (response.data.success) {
+        const list = response.data.data || [];
+        const pagination = response.data.pagination;
+        set((state) => ({
+          staff: [...state.staff, ...list],
+          currentPage: nextPage,
+          hasMore: pagination ? nextPage < pagination.pages : list.length === PAGE_LIMIT,
+          isFetchingMore: false,
+        }));
+      } else {
+        set({ isFetchingMore: false, hasMore: false });
+      }
+    } catch (error: any) {
+      console.error('Error loading more staff:', error);
+      set({ isFetchingMore: false });
     }
   },
 

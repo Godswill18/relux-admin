@@ -43,41 +43,41 @@ export default function PaymentsPage() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold">Payment Management</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold">Payment Management</h1>
         <p className="text-muted-foreground">Manage payments, transactions, and payment methods</p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₦{totalRevenue.toLocaleString()}</div>
+            <div className="text-xl sm:text-2xl font-bold">₦{totalRevenue.toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">From confirmed payments</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Payments</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Pending</CardTitle>
+            <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₦{pendingAmount.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">{pendingCount} awaiting confirmation</p>
+            <div className="text-xl sm:text-2xl font-bold">₦{pendingAmount.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">{pendingCount} awaiting</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="col-span-2 sm:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Failed Payments</CardTitle>
-            <XCircle className="h-4 w-4 text-muted-foreground" />
+            <XCircle className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{failedCount}</div>
+            <div className="text-xl sm:text-2xl font-bold">{failedCount}</div>
             <p className="text-xs text-muted-foreground">Transactions failed</p>
           </CardContent>
         </Card>
@@ -85,18 +85,18 @@ export default function PaymentsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="transactions" className="flex-1 sm:flex-none">Transactions</TabsTrigger>
+          <TabsTrigger value="settings" className="flex-1 sm:flex-none">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="transactions">
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle>Payment Transactions</CardTitle>
               <CardDescription>View and manage all payment transactions</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 sm:px-6">
               <TransactionsTab />
             </CardContent>
           </Card>
