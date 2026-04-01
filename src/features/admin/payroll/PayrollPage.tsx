@@ -157,8 +157,12 @@ export default function PayrollPage() {
     try {
       await generateEntries(selectedPeriod._id || selectedPeriod.id);
       toast.success('Payroll entries generated from attendance data');
-    } catch {
-      toast.error('Failed to generate entries');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to generate entries';
+      toast.error(msg);
     }
   };
 
@@ -466,22 +470,21 @@ export default function PayrollPage() {
   // ============================================================================
 
   if (selectedPeriod) {
-    const pid = selectedPeriod._id || selectedPeriod.id;
     const staffCount = entries.length;
     const avgPay = staffCount > 0 ? currentTotal / staffCount : 0;
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Back + Title */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedPeriod(null)}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedPeriod(null)} className="shrink-0 mt-0.5">
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold">{selectedPeriod.name || 'Payroll Schedule'}</h1>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Calendar className="h-3.5 w-3.5" />
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold">{selectedPeriod.name || 'Payroll Schedule'}</h1>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
                 {format(new Date(selectedPeriod.startDate), 'MMM dd')} -{' '}
                 {format(new Date(selectedPeriod.endDate), 'MMM dd, yyyy')}
                 <span className="mx-1">·</span>
@@ -493,20 +496,20 @@ export default function PayrollPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Payroll</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(currentTotal)}</div>
+              <div className="text-xl sm:text-2xl font-bold">{formatCurrency(currentTotal)}</div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Staff</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Users className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{staffCount}</div>
@@ -516,20 +519,20 @@ export default function PayrollPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Average Pay</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(Math.round(avgPay))}</div>
+              <div className="text-xl sm:text-2xl font-bold">{formatCurrency(Math.round(avgPay))}</div>
               <p className="text-xs text-muted-foreground">per staff member</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Bonuses / Deductions</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-green-600 font-medium text-sm">
                   +{formatCurrency(entrySummary?.totalBonuses || 0)}
                 </span>
@@ -545,46 +548,48 @@ export default function PayrollPage() {
         {/* Workflow Status + Actions */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              {/* Workflow Steps */}
-              <div className="flex items-center gap-2 text-sm">
-                <WorkflowStep
-                  label="Create"
-                  icon={<Calendar className="h-3.5 w-3.5" />}
-                  done
-                />
-                <WorkflowArrow />
-                <WorkflowStep
-                  label="Generate"
-                  icon={<Clock className="h-3.5 w-3.5" />}
-                  done={entries.length > 0}
-                  active={selectedPeriod.status === 'draft' && entries.length === 0}
-                />
-                <WorkflowArrow />
-                <WorkflowStep
-                  label="Approve"
-                  icon={<ShieldCheck className="h-3.5 w-3.5" />}
-                  done={selectedPeriod.status === 'approved' || selectedPeriod.status === 'finalized' || selectedPeriod.status === 'paid'}
-                  active={selectedPeriod.status === 'draft' && entries.length > 0}
-                />
-                <WorkflowArrow />
-                <WorkflowStep
-                  label="Finalize"
-                  icon={<Lock className="h-3.5 w-3.5" />}
-                  done={selectedPeriod.status === 'finalized' || selectedPeriod.status === 'paid'}
-                  active={selectedPeriod.status === 'approved'}
-                />
-                <WorkflowArrow />
-                <WorkflowStep
-                  label="Mark Paid"
-                  icon={<CreditCard className="h-3.5 w-3.5" />}
-                  done={selectedPeriod.status === 'paid'}
-                  active={selectedPeriod.status === 'finalized'}
-                />
+            <div className="flex flex-col gap-4">
+              {/* Workflow Steps — scrollable on mobile */}
+              <div className="overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 text-sm min-w-max">
+                  <WorkflowStep
+                    label="Create"
+                    icon={<Calendar className="h-3.5 w-3.5" />}
+                    done
+                  />
+                  <WorkflowArrow />
+                  <WorkflowStep
+                    label="Generate"
+                    icon={<Clock className="h-3.5 w-3.5" />}
+                    done={entries.length > 0}
+                    active={selectedPeriod.status === 'draft' && entries.length === 0}
+                  />
+                  <WorkflowArrow />
+                  <WorkflowStep
+                    label="Approve"
+                    icon={<ShieldCheck className="h-3.5 w-3.5" />}
+                    done={selectedPeriod.status === 'approved' || selectedPeriod.status === 'finalized' || selectedPeriod.status === 'paid'}
+                    active={selectedPeriod.status === 'draft' && entries.length > 0}
+                  />
+                  <WorkflowArrow />
+                  <WorkflowStep
+                    label="Finalize"
+                    icon={<Lock className="h-3.5 w-3.5" />}
+                    done={selectedPeriod.status === 'finalized' || selectedPeriod.status === 'paid'}
+                    active={selectedPeriod.status === 'approved'}
+                  />
+                  <WorkflowArrow />
+                  <WorkflowStep
+                    label="Mark Paid"
+                    icon={<CreditCard className="h-3.5 w-3.5" />}
+                    done={selectedPeriod.status === 'paid'}
+                    active={selectedPeriod.status === 'finalized'}
+                  />
+                </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {selectedPeriod.status === 'draft' && (
                   <>
                     <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
@@ -626,28 +631,103 @@ export default function PayrollPage() {
           </CardContent>
         </Card>
 
-        {/* Entries Table */}
+        {/* Entries */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Payroll Entries</CardTitle>
-                <CardDescription>
-                  {entries.length > 0
-                    ? `${entries.length} staff member${entries.length !== 1 ? 's' : ''} in this payroll run`
-                    : 'No entries yet. Click "Generate Entries" to auto-calculate from attendance data.'}
-                </CardDescription>
-              </div>
+            <div>
+              <CardTitle>Payroll Entries</CardTitle>
+              <CardDescription>
+                {entries.length > 0
+                  ? `${entries.length} staff member${entries.length !== 1 ? 's' : ''} in this payroll run`
+                  : 'No entries yet. Click "Generate Entries" to auto-calculate from attendance data.'}
+              </CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <DataTable
-              columns={entryColumns}
-              data={Array.isArray(entries) ? entries : []}
-              searchKey="userId"
-              searchPlaceholder="Search staff..."
-              isLoading={isLoading}
-            />
+          <CardContent className="px-3 sm:px-6">
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-3">
+              {isLoading ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} className="animate-pulse"><CardContent className="p-4 h-24" /></Card>
+                ))
+              ) : entries.length === 0 ? (
+                <Card><CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                  <Users className="h-8 w-8 opacity-30 text-muted-foreground" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">No entries generated yet</p>
+                    <p className="text-xs text-muted-foreground max-w-sm">
+                      Click <span className="font-semibold">Generate Entries</span> to auto-calculate from attendance data.
+                      Make sure each staff member has an <span className="font-semibold">active compensation record</span> configured
+                      (hourly rate or salary) in the Staff section before generating.
+                    </p>
+                  </div>
+                </CardContent></Card>
+              ) : entries.map((entry) => {
+                const ps = entry.paymentStatus || 'pending';
+                return (
+                  <Card key={entry._id || entry.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm">{getStaffName(entry.userId)}</span>
+                            <Badge variant="outline" className="text-xs capitalize">{entry.payType}</Badge>
+                          </div>
+                          {getStaffRole(entry.userId) && (
+                            <p className="text-xs text-muted-foreground capitalize">{getStaffRole(entry.userId)}</p>
+                          )}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>Hours: <span className="text-foreground font-medium">{entry.baseHours}h{entry.overtimeHours > 0 ? ` +${entry.overtimeHours}h OT` : ''}</span></span>
+                            <span>Base: <span className="text-foreground font-medium">{formatCurrency(entry.basePay || 0)}</span></span>
+                            {entry.bonuses > 0 && <span className="text-green-600">+{formatCurrency(entry.bonuses)}</span>}
+                            {entry.deductions > 0 && <span className="text-red-600">-{formatCurrency(entry.deductions)}</span>}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t">
+                            <span className="font-bold text-sm">{formatCurrency(entry.totalPay)}</span>
+                            <Badge
+                              variant={ps === 'paid' ? 'outline' : 'secondary'}
+                              className={ps === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-xs' : 'text-xs'}
+                            >
+                              {ps === 'paid' ? 'Paid' : 'Pending'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() => setEditEntry(entry)}
+                              disabled={selectedPeriod?.status !== 'draft'}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />Edit Entry
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleGeneratePayslip(entry)}>
+                              <Download className="mr-2 h-4 w-4" />Generate Payslip
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+            {/* Desktop table */}
+            <div className="hidden md:block">
+              <DataTable
+                columns={entryColumns}
+                data={Array.isArray(entries) ? entries : []}
+                searchKey="userId"
+                searchPlaceholder="Search staff..."
+                isLoading={isLoading}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -676,16 +756,16 @@ export default function PayrollPage() {
   // ============================================================================
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Payroll Scheduler</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold">Payroll Scheduler</h1>
+          <p className="text-muted-foreground text-sm">
             Create schedules, calculate earnings, and manage staff payroll
           </p>
         </div>
-        <Button onClick={() => setIsCreateModalOpen(true)}>
+        <Button onClick={() => setIsCreateModalOpen(true)} className="w-full sm:w-auto">
           <Plus className="mr-2 h-4 w-4" />
           New Schedule
         </Button>
@@ -705,11 +785,11 @@ export default function PayrollPage() {
       />
 
       {/* Overview Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Draft Schedules</CardTitle>
-            <Clock className="h-4 w-4 text-amber-500" />
+            <Clock className="h-4 w-4 text-amber-500 shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{draftCount}</div>
@@ -719,7 +799,7 @@ export default function PayrollPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Runs</CardTitle>
-            <CalendarCheck className="h-4 w-4 text-blue-500" />
+            <CalendarCheck className="h-4 w-4 text-blue-500 shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{activeCount}</div>
@@ -729,17 +809,17 @@ export default function PayrollPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Paid</CardTitle>
-            <DollarSign className="h-4 w-4 text-green-500" />
+            <DollarSign className="h-4 w-4 text-green-500 shrink-0" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(paidTotal)}</div>
+            <div className="text-xl sm:text-2xl font-bold">{formatCurrency(paidTotal)}</div>
             <p className="text-xs text-muted-foreground">All-time payroll disbursed</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Schedules</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
+            <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{allPeriods.length}</div>
@@ -754,11 +834,11 @@ export default function PayrollPage() {
           <CardTitle>Payroll Schedules</CardTitle>
           <CardDescription>Select a schedule to preview entries and manage the payroll workflow</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 sm:px-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="all">All</TabsTrigger>
-              <TabsTrigger value="active">
+            <TabsList className="w-full sm:w-auto">
+              <TabsTrigger value="all" className="flex-1 sm:flex-none">All</TabsTrigger>
+              <TabsTrigger value="active" className="flex-1 sm:flex-none">
                 Active
                 {(draftCount + activeCount) > 0 && (
                   <Badge variant="secondary" className="ml-1.5 h-5 px-1.5 text-xs">
@@ -766,17 +846,71 @@ export default function PayrollPage() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="completed">Completed</TabsTrigger>
+              <TabsTrigger value="completed" className="flex-1 sm:flex-none">Completed</TabsTrigger>
             </TabsList>
 
             <TabsContent value={activeTab} className="mt-0">
-              <DataTable
-                columns={periodColumns}
-                data={filteredPeriods}
-                searchKey="name"
-                searchPlaceholder="Search schedules..."
-                isLoading={isLoading}
-              />
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+                  ))
+                ) : filteredPeriods.length === 0 ? (
+                  <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                    <Calendar className="h-8 w-8 opacity-30 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No schedules found</p>
+                  </CardContent></Card>
+                ) : filteredPeriods.map((period) => (
+                  <Card key={period._id || period.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm">{period.name || 'Unnamed'}</span>
+                            <StatusBadge status={period.status} />
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                            <FrequencyBadge frequency={period.frequency} />
+                            <span>
+                              {format(new Date(period.startDate), 'MMM dd')} –{' '}
+                              {format(new Date(period.endDate), 'MMM dd, yyyy')}
+                            </span>
+                          </div>
+                          {period.totalAmount > 0 && (
+                            <p className="text-sm font-medium">{formatCurrency(period.totalAmount)}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button variant="outline" size="sm" onClick={() => setSelectedPeriod(period)}>
+                            View
+                          </Button>
+                          {period.status === 'draft' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-destructive"
+                              onClick={() => handleDelete(period)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={periodColumns}
+                  data={filteredPeriods}
+                  searchKey="name"
+                  searchPlaceholder="Search schedules..."
+                  isLoading={isLoading}
+                />
+              </div>
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -802,7 +936,7 @@ function WorkflowStep({
 }) {
   return (
     <div
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
         done
           ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
           : active

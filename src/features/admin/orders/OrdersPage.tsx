@@ -1,21 +1,24 @@
 // ============================================================================
-// ORDERS PAGE - Main Order Management Interface
+// ORDERS PAGE - Tabbed Order Management with Accurate DB Counts
 // ============================================================================
 
-import { useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine,
-  CheckCircle2, Search, Package, User,
+  CheckCircle2, Search, Package, User, Globe, Store, Archive,
 } from 'lucide-react';
 import { CreateOrderModal } from './CreateOrderModal';
+import { EditOrderModal } from './EditOrderModal';
+import { AssignStaffModal } from './AssignStaffModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
 import {
   DropdownMenu,
@@ -26,12 +29,32 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useOrderStore } from '@/stores/useOrderStore';
 import { useHasPermission } from '@/stores/useAuthStore';
-import { LoadMoreTrigger } from '@/components/shared/LoadMoreTrigger';
 import { Permission } from '@/types';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import apiClient from '@/lib/api/client';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+type TabKey = 'all' | 'online' | 'walkin' | 'completed';
+
+interface OrderCounts {
+  total: number;
+  online: number;
+  walkin: number;
+  completed: number;
+}
+
+// Query params per tab
+const TAB_PARAMS: Record<TabKey, Record<string, string>> = {
+  all:       { excludeCompleted: 'true', limit: '100' },
+  online:    { orderSource: 'online',  excludeCompleted: 'true', limit: '100' },
+  walkin:    { orderSource: 'offline', excludeCompleted: 'true', limit: '100' },
+  completed: { doneOnly: 'true', limit: '100' },
+};
 
 // ============================================================================
 // ORDERS PAGE COMPONENT
@@ -39,28 +62,78 @@ import { format } from 'date-fns';
 
 export default function OrdersPage() {
   const navigate = useNavigate();
-  const { orders, isLoading, isFetchingMore, hasMore, fetchOrders, loadMoreOrders, setSelectedOrder, deleteOrder } = useOrderStore();
   const canCreate = useHasPermission(Permission.CREATE_ORDER);
-  const canEdit = useHasPermission(Permission.EDIT_ORDER);
+  const canEdit   = useHasPermission(Permission.EDIT_ORDER);
   const canAssign = useHasPermission(Permission.ASSIGN_STAFF);
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
+
+  const [activeTab, setActiveTab]       = useState<TabKey>('all');
+  const [orders, setOrders]             = useState<any[]>([]);
+  const [counts, setCounts]             = useState<OrderCounts>({ total: 0, online: 0, walkin: 0, completed: 0 });
+  const [isLoading, setIsLoading]       = useState(false);
+  const [refreshKey, setRefreshKey]     = useState(0);
+  const [search, setSearch]             = useState('');
+
+  // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editTarget,   setEditTarget]   = useState<any>(null);
+  const [assignTarget, setAssignTarget] = useState<any>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [search, setSearch] = useState('');
+  const [isDeleting,   setIsDeleting]   = useState(false);
 
+  const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  // Fetch DB counts (independent of pagination)
   useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
+    apiClient.get('/orders/counts')
+      .then((res) => {
+        const d = res.data?.data;
+        if (d) setCounts(d);
+      })
+      .catch(() => {});
+  }, [refreshKey]);
+
+  // Fetch orders for the active tab
+  useEffect(() => {
+    let cancelled = false;
+    const fetch = async () => {
+      setIsLoading(true);
+      setSearch('');
+      try {
+        const res = await apiClient.get('/orders', { params: TAB_PARAMS[activeTab] });
+        if (!cancelled) {
+          const raw = res.data?.data;
+          setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
+        }
+      } catch {
+        if (!cancelled) setOrders([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    fetch();
+    return () => { cancelled = true; };
+  }, [activeTab, refreshKey]);
+
+  const filteredOrders = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return orders;
+    return orders.filter((o) => {
+      const num  = (o.orderNumber ?? '').toLowerCase();
+      const name = (o.customer?.name ?? o.walkInCustomer?.name ?? '').toLowerCase();
+      return num.includes(q) || name.includes(q);
+    });
+  }, [orders, search]);
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     try {
       setIsDeleting(true);
-      await deleteOrder(deleteTarget._id || deleteTarget.id);
+      await apiClient.delete(`/orders/${deleteTarget._id || deleteTarget.id}`);
       toast.success('Order deleted successfully');
       setDeleteTarget(null);
+      refresh();
     } catch {
       toast.error('Failed to delete order');
     } finally {
@@ -68,32 +141,8 @@ export default function OrdersPage() {
     }
   };
 
-  const orderList: any[] = Array.isArray(orders) ? orders : [];
+  // ── Table columns ────────────────────────────────────────────────────────
 
-  // Filtered list shared by both mobile cards and desktop table
-  const filteredOrders = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return orderList;
-    return orderList.filter((o) => {
-      const num = (o.orderNumber ?? '').toLowerCase();
-      const name = (o.customer?.name ?? o.walkInCustomer?.name ?? '').toLowerCase();
-      return num.includes(q) || name.includes(q);
-    });
-  }, [orderList, search]);
-
-  // Stats
-  const stats = {
-    total: orderList.length,
-    pending: orderList.filter((o) => o.status === 'pending').length,
-    inProgress: orderList.filter((o) =>
-      ['in_progress', 'washing', 'ironing'].includes(o.status)
-    ).length,
-    revenue: orderList
-      .filter((o) => o.payment?.status === 'paid')
-      .reduce((sum, o) => sum + (o.pricing?.total || o.total || 0), 0),
-  };
-
-  // Desktop table columns
   const columns: ColumnDef<any>[] = [
     {
       accessorKey: 'orderNumber',
@@ -144,8 +193,7 @@ export default function OrdersPage() {
       id: 'payment',
       header: 'Payment',
       cell: ({ row }) => {
-        const paymentStatus =
-          row.original.payment?.status || row.original.paymentStatus || 'unpaid';
+        const paymentStatus = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
         return <PaymentStatusBadge status={paymentStatus} />;
       },
     },
@@ -163,14 +211,11 @@ export default function OrdersPage() {
     {
       accessorKey: 'createdAt',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
-      cell: ({ row }) => {
-        const date = row.original.createdAt;
-        return (
-          <div className="text-sm text-muted-foreground">
-            {date ? format(new Date(date), 'MMM dd, yyyy') : '—'}
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <div className="text-sm text-muted-foreground">
+          {row.original.createdAt ? format(new Date(row.original.createdAt), 'MMM dd, yyyy') : '—'}
+        </div>
+      ),
     },
     {
       id: 'actions',
@@ -191,13 +236,13 @@ export default function OrdersPage() {
                 View Details
               </DropdownMenuItem>
               {canEdit && (
-                <DropdownMenuItem onClick={() => setSelectedOrder(order)}>
+                <DropdownMenuItem onClick={() => setEditTarget(order)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit Order
                 </DropdownMenuItem>
               )}
               {canAssign && (
-                <DropdownMenuItem onClick={() => setSelectedOrder(order)}>
+                <DropdownMenuItem onClick={() => setAssignTarget(order)}>
                   <UserPlus className="mr-2 h-4 w-4" />
                   Assign Staff
                 </DropdownMenuItem>
@@ -221,6 +266,15 @@ export default function OrdersPage() {
     },
   ];
 
+  // ── Tab config ────────────────────────────────────────────────────────────
+
+  const tabs: { key: TabKey; label: string; icon: React.ReactNode; count: number }[] = [
+    { key: 'all',       label: 'All Orders',   icon: <Package className="h-3.5 w-3.5" />,      count: counts.total },
+    { key: 'online',    label: 'Online',        icon: <Globe className="h-3.5 w-3.5" />,         count: counts.online },
+    { key: 'walkin',    label: 'Walk-in',       icon: <Store className="h-3.5 w-3.5" />,         count: counts.walkin },
+    { key: 'completed', label: 'Completed',     icon: <CheckCircle2 className="h-3.5 w-3.5" />,  count: counts.completed },
+  ];
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* ── Page Header ─────────────────────────────────────────────────────── */}
@@ -230,21 +284,11 @@ export default function OrdersPage() {
           <p className="text-muted-foreground text-sm">Manage all laundry orders</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 sm:flex-none"
-            onClick={() => navigate('/admin/orders/delivered')}
-          >
+          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => navigate('/admin/orders/delivered')}>
             <CheckCircle2 className="mr-2 h-4 w-4" />
             Delivered
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 sm:flex-none"
-            onClick={() => setIsScannerOpen(true)}
-          >
+          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setIsScannerOpen(true)}>
             <ScanLine className="mr-2 h-4 w-4" />
             Scan
           </Button>
@@ -257,9 +301,19 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      <CreateOrderModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} />
+      {/* ── Modals ──────────────────────────────────────────────────────────── */}
+      <CreateOrderModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} onSuccess={refresh} />
+      <EditOrderModal
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        order={editTarget}
+      />
+      <AssignStaffModal
+        open={!!assignTarget}
+        onOpenChange={(open) => !open && setAssignTarget(null)}
+        order={assignTarget}
+      />
       <BarcodeScannerModal open={isScannerOpen} onOpenChange={setIsScannerOpen} />
-
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
@@ -267,8 +321,7 @@ export default function OrdersPage() {
         description={
           <>
             Are you sure you want to delete order{' '}
-            <strong>{deleteTarget?.orderNumber || deleteTarget?.code}</strong>? This action cannot
-            be undone.
+            <strong>{deleteTarget?.orderNumber || deleteTarget?.code}</strong>? This action cannot be undone.
           </>
         }
         confirmLabel="Delete"
@@ -277,117 +330,157 @@ export default function OrdersPage() {
         onConfirm={handleConfirmDelete}
       />
 
-      {/* ── Stats Cards ─────────────────────────────────────────────────────── */}
+      {/* ── Stats Cards (DB-accurate counts) ───────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card>
+        <Card
+          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'all' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => setActiveTab('all')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">Total Orders</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-2xl font-bold">{counts.total}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Undelivered</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'online' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => setActiveTab('online')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Pending</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Online Orders</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.pending}</div>
+            <div className="text-2xl font-bold">{counts.online}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Via app / website</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'walkin' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => setActiveTab('walkin')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">In Progress</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Walk-in Orders</CardTitle>
+            <Store className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.inProgress}</div>
+            <div className="text-2xl font-bold">{counts.walkin}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">In-store / offline</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'completed' ? 'ring-2 ring-primary' : ''}`}
+          onClick={() => setActiveTab('completed')}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Revenue (Paid)</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Completed</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-xl sm:text-2xl font-bold">₦{stats.revenue.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{counts.completed}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Delivered / closed</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Search (shared between mobile + desktop) ─────────────────────────── */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by order number or customer name…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
+      {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+        <div className="w-full overflow-x-auto">
+          <TabsList className="flex w-max min-w-full sm:w-auto sm:min-w-0">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                className="flex-1 sm:flex-none flex items-center gap-1.5 text-xs sm:text-sm whitespace-nowrap"
+              >
+                {tab.icon}
+                {tab.label}
+                <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-4">
+                  {tab.count}
+                </Badge>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      {/* ── Mobile Card List + load-more (hidden on md+) ────────────────────── */}
-      <div className="md:hidden space-y-3">
-        {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="p-4 space-y-2">
-                <div className="h-4 bg-muted rounded w-1/3" />
-                <div className="h-3 bg-muted rounded w-1/2" />
-                <div className="h-3 bg-muted rounded w-2/3" />
+        {tabs.map((tab) => (
+          <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by order number or customer name…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            {/* Mobile Card List */}
+            <div className="md:hidden space-y-3">
+              {isLoading ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <Card key={i} className="animate-pulse">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="h-4 bg-muted rounded w-1/3" />
+                      <div className="h-3 bg-muted rounded w-1/2" />
+                      <div className="h-3 bg-muted rounded w-2/3" />
+                    </CardContent>
+                  </Card>
+                ))
+              ) : filteredOrders.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center gap-3 py-12">
+                    <Package className="h-10 w-10 text-muted-foreground opacity-40" />
+                    <p className="text-sm text-muted-foreground">No orders found</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredOrders.map((order) => (
+                  <MobileOrderCard
+                    key={order._id}
+                    order={order}
+                    canEdit={canEdit}
+                    canAssign={canAssign}
+                    canDelete={canDelete}
+                    onView={() => navigate(`/admin/orders/${order._id}`)}
+                    onEdit={() => setEditTarget(order)}
+                    onAssign={() => setAssignTarget(order)}
+                    onDelete={() => setDeleteTarget(order)}
+                  />
+                ))
+              )}
+            </div>
+
+            {/* Desktop Table */}
+            <Card className="hidden md:block">
+              <CardHeader>
+                <CardTitle>{tab.label}</CardTitle>
+                <CardDescription>
+                  {tab.key === 'all'       && 'All active undelivered orders'}
+                  {tab.key === 'online'    && 'Orders placed via app or website'}
+                  {tab.key === 'walkin'    && 'Walk-in orders created in-store'}
+                  {tab.key === 'completed' && 'Delivered and completed orders'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DataTable
+                  columns={columns}
+                  data={filteredOrders}
+                  searchKey={undefined}
+                  searchPlaceholder="Search by order number or customer name..."
+                  isLoading={isLoading}
+                  onRowClick={(order: any) => navigate(`/admin/orders/${order._id}`)}
+                  showColumnVisibility
+                />
               </CardContent>
             </Card>
-          ))
-        ) : filteredOrders.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center gap-3 py-12">
-              <Package className="h-10 w-10 text-muted-foreground opacity-40" />
-              <p className="text-sm text-muted-foreground">No orders found</p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredOrders.map((order) => (
-            <MobileOrderCard
-              key={order._id}
-              order={order}
-              canEdit={canEdit}
-              canAssign={canAssign}
-              canDelete={canDelete}
-              onView={() => navigate(`/admin/orders/${order._id}`)}
-              onEdit={() => setSelectedOrder(order)}
-              onAssign={() => setSelectedOrder(order)}
-              onDelete={() => setDeleteTarget(order)}
-            />
-          ))
-        )}
-        <LoadMoreTrigger
-          onIntersect={loadMoreOrders}
-          isFetchingMore={isFetchingMore}
-          hasMore={hasMore}
-        />
-      </div>
-
-      {/* ── Desktop Table (hidden on mobile) ────────────────────────────────── */}
-      <Card className="hidden md:block">
-        <CardHeader>
-          <CardTitle>All Orders</CardTitle>
-          <CardDescription>View and manage all customer orders</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={columns}
-            data={filteredOrders}
-            searchKey={undefined}
-            searchPlaceholder="Search by order number or customer name..."
-            isLoading={isLoading}
-            onRowClick={(order: any) => navigate(`/admin/orders/${order._id}`)}
-            showColumnVisibility
-          />
-        </CardContent>
-      </Card>
-      <LoadMoreTrigger
-        onIntersect={loadMoreOrders}
-        isFetchingMore={isFetchingMore}
-        hasMore={hasMore}
-      />
+          </TabsContent>
+        ))}
+      </Tabs>
     </div>
   );
 }
@@ -418,22 +511,15 @@ function MobileOrderCard({
   onDelete,
 }: MobileOrderCardProps) {
   const isWalkIn = order.orderSource === 'offline';
-  const customerName =
-    order.customer?.name || order.walkInCustomer?.name || '—';
+  const customerName = order.customer?.name || order.walkInCustomer?.name || '—';
   const items: any[] = order.items || [];
   const total = order.pricing?.total || order.total || 0;
-  const paymentStatus = order.payment?.status || order.paymentStatus || 'unpaid';
-  const createdAt = order.createdAt
-    ? format(new Date(order.createdAt), 'MMM dd, yyyy')
-    : '—';
+  const paymentStatus = order.paymentStatus || order.payment?.status || 'unpaid';
+  const createdAt = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
 
   return (
-    <Card
-      className="cursor-pointer hover:bg-muted/30 transition-colors"
-      onClick={onView}
-    >
+    <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={onView}>
       <CardContent className="p-4 space-y-3">
-        {/* Top row: order number + actions */}
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -449,11 +535,7 @@ function MobileOrderCard({
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="h-8 w-8 p-0 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <Button variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={(e) => e.stopPropagation()}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -477,10 +559,7 @@ function MobileOrderCard({
               {canDelete && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                  >
+                  <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
                     <Trash className="mr-2 h-4 w-4" />
                     Delete
                   </DropdownMenuItem>
@@ -490,7 +569,6 @@ function MobileOrderCard({
           </DropdownMenu>
         </div>
 
-        {/* Items */}
         {items.length > 0 && (
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
             <Package className="h-3.5 w-3.5 shrink-0" />
@@ -501,7 +579,6 @@ function MobileOrderCard({
           </div>
         )}
 
-        {/* Bottom row: status + payment + total + date */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <OrderStatusBadge status={order.status} />

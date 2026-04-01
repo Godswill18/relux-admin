@@ -2,7 +2,7 @@
 // SHIFTS PAGE - Shift Scheduling & Management (Maxy Grand style)
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,12 +45,16 @@ import {
   ZapOff,
   Clock,
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
 } from 'lucide-react';
 import { format, parseISO, isValid } from 'date-fns';
 import { useShiftStore, Shift, CreateShiftData } from '@/stores/useShiftStore';
 import { useStaffStore } from '@/stores/useStaffStore';
-import { useHasPermission } from '@/stores/useAuthStore';
+import { useHasPermission, useCurrentUser } from '@/stores/useAuthStore';
 import { Permission } from '@/types';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -92,6 +96,9 @@ export default function ShiftsPage() {
 
   const { staff, fetchStaff } = useStaffStore();
   const canManageShifts = useHasPermission(Permission.MANAGE_SHIFTS);
+  const currentUser = useCurrentUser();
+  // Only admin sees all shifts — manager, receptionist, and staff each see only their own
+  const isAdmin = (currentUser?.role as string)?.toLowerCase() === 'admin';
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -99,6 +106,7 @@ export default function ShiftsPage() {
   const [filterDate, setFilterDate] = useState<Date | null>(null);
   const [filterStaff, setFilterStaff] = useState<string>('all');
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
 
   // Confirmation dialog state
   const [confirmDialog, setConfirmDialog] = useState<ConfirmationDialogState>({
@@ -120,7 +128,12 @@ export default function ShiftsPage() {
   });
 
   useEffect(() => {
-    fetchShifts();
+    // Non-admins fetch only their own shifts; admins fetch all
+    if (!isAdmin && currentUser?.id) {
+      fetchShifts({ userId: currentUser.id });
+    } else {
+      fetchShifts();
+    }
     fetchStaff();
 
     const interval = setInterval(() => {
@@ -128,7 +141,7 @@ export default function ShiftsPage() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [fetchShifts, fetchStaff]);
+  }, [fetchShifts, fetchStaff, isAdmin, currentUser?.id]);
 
   // ============================================================================
   // HELPERS
@@ -155,8 +168,16 @@ export default function ShiftsPage() {
 
   const validShifts = (Array.isArray(shifts) ? shifts : []).filter(hasValidDates);
 
-  // Filter logic
-  const filteredShifts = validShifts.filter((shift) => {
+  // Staff can only see their own shifts
+  const myShifts = !isAdmin
+    ? validShifts.filter((shift) => {
+        const shiftUserId = typeof shift.userId === 'object' ? shift.userId?._id : shift.userId;
+        return shiftUserId === currentUser?.id;
+      })
+    : validShifts;
+
+  // Filter logic (staff only filter by date; admins can also filter by staff member)
+  const filteredShifts = myShifts.filter((shift) => {
     if (filterDate) {
       const filterDateStr = format(filterDate, 'yyyy-MM-dd');
       const shiftStartDate = safeFormatDate(shift.startDate, 'yyyy-MM-dd', '');
@@ -166,7 +187,7 @@ export default function ShiftsPage() {
       }
     }
 
-    if (filterStaff !== 'all') {
+    if (isAdmin && filterStaff !== 'all') {
       const userId = typeof shift.userId === 'object' ? shift.userId?._id : shift.userId;
       return userId === filterStaff;
     }
@@ -174,17 +195,34 @@ export default function ShiftsPage() {
     return true;
   });
 
-  // Stats
+  // Set of all dates covered by the staff's own shifts (for calendar highlighting)
+  const shiftDays = useMemo(() => {
+    const days = new Set<string>();
+    myShifts.forEach((shift) => {
+      try {
+        const start = new Date(shift.startDate);
+        const end = new Date(shift.endDate);
+        const cur = new Date(start);
+        while (cur <= end) {
+          days.add(format(cur, 'yyyy-MM-dd'));
+          cur.setDate(cur.getDate() + 1);
+        }
+      } catch {}
+    });
+    return days;
+  }, [myShifts]);
+
+  // Stats (based on the shifts the current user is allowed to see)
   const stats = {
-    total: validShifts.length,
-    today: validShifts.filter((shift) => {
+    total: myShifts.length,
+    today: myShifts.filter((shift) => {
       const todayStr = format(currentTime, 'yyyy-MM-dd');
       return (
         safeFormatDate(shift.startDate, 'yyyy-MM-dd', '') <= todayStr &&
         safeFormatDate(shift.endDate, 'yyyy-MM-dd', '') >= todayStr
       );
     }).length,
-    week: validShifts.filter((shift) => {
+    week: myShifts.filter((shift) => {
       const startOfWeek = new Date(currentTime);
       startOfWeek.setDate(currentTime.getDate() - currentTime.getDay());
       const endOfWeek = new Date(startOfWeek);
@@ -193,15 +231,15 @@ export default function ShiftsPage() {
       const shiftEnd = new Date(safeFormatDate(shift.endDate, 'yyyy-MM-dd', ''));
       return shiftStart <= endOfWeek && shiftEnd >= startOfWeek;
     }).length,
-    shiftTime: validShifts.filter((shift) => shift.isActive).length,
-    emergencyActive: validShifts.filter((shift) => shift.emergencyActivated).length,
-    offShift: validShifts.filter(
+    shiftTime: myShifts.filter((shift) => shift.isActive).length,
+    emergencyActive: myShifts.filter((shift) => shift.emergencyActivated).length,
+    offShift: myShifts.filter(
       (shift) =>
         !shift.isActive &&
         typeof shift.userId === 'object' &&
         shift.userId?.isActive !== false
     ).length,
-    deactivated: validShifts.filter(
+    deactivated: myShifts.filter(
       (shift) => typeof shift.userId === 'object' && shift.userId?.isActive === false
     ).length,
   };
@@ -536,6 +574,109 @@ export default function ShiftsPage() {
   );
 
   // ============================================================================
+  // CALENDAR (staff view — shows only their own shift days)
+  // ============================================================================
+
+  const renderCalendar = () => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    const firstDow = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const selectedStr = filterDate ? format(filterDate, 'yyyy-MM-dd') : '';
+
+    const cells: (number | null)[] = [
+      ...Array(firstDow).fill(null),
+      ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+    ];
+
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <CalendarDays className="h-4 w-4" />
+            My Shift Calendar
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between mb-3">
+            <button
+              type="button"
+              className="p-1 rounded hover:bg-muted"
+              onClick={() => setCalendarMonth(new Date(year, month - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-medium">{format(calendarMonth, 'MMMM yyyy')}</span>
+            <button
+              type="button"
+              className="p-1 rounded hover:bg-muted"
+              onClick={() => setCalendarMonth(new Date(year, month + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center mb-1">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+              <div key={d} className="text-xs font-medium text-muted-foreground py-1">{d}</div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {cells.map((day, i) => {
+              if (!day) return <div key={`e-${i}`} />;
+              const dateStr = format(new Date(year, month, day), 'yyyy-MM-dd');
+              const isShiftDay = shiftDays.has(dateStr);
+              const isToday = dateStr === todayStr;
+              const isSelected = dateStr === selectedStr;
+
+              return (
+                <button
+                  key={dateStr}
+                  type="button"
+                  onClick={() => setFilterDate(isSelected ? null : new Date(year, month, day))}
+                  className={cn(
+                    'h-8 w-8 mx-auto rounded-full text-xs flex items-center justify-center transition-colors',
+                    isSelected
+                      ? 'bg-primary text-primary-foreground font-bold'
+                      : isShiftDay
+                      ? 'bg-primary/20 text-primary font-semibold hover:bg-primary/30'
+                      : 'text-muted-foreground hover:bg-muted',
+                    isToday && !isSelected && 'ring-1 ring-primary'
+                  )}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-primary/20 inline-block" />
+              Shift day
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full ring-1 ring-primary inline-block" />
+              Today
+            </span>
+            {filterDate && (
+              <button
+                type="button"
+                className="ml-auto text-primary underline"
+                onClick={() => setFilterDate(null)}
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ============================================================================
   // RENDER
   // ============================================================================
 
@@ -544,8 +685,10 @@ export default function ShiftsPage() {
       {/* Header with Current Time */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Shift Scheduler</h1>
-          <p className="text-muted-foreground">Manage staff shifts and schedules</p>
+          <h1 className="text-3xl font-bold">{!isAdmin ? 'My Shifts' : 'Shift Scheduler'}</h1>
+          <p className="text-muted-foreground">
+            {!isAdmin ? 'Your scheduled work shifts' : 'Manage staff shifts and schedules'}
+          </p>
           <div className="flex items-center gap-2 mt-2">
             <Clock className="h-4 w-4 text-green-600" />
             <span className="text-sm font-medium text-green-600">
@@ -580,22 +723,27 @@ export default function ShiftsPage() {
         </Card>
       )}
 
-      {/* Auto-activation info */}
-      <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
-            <div>
-              <p className="font-semibold text-blue-700 dark:text-blue-300">Automatic Daily Activation</p>
-              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                Shifts automatically activate and deactivate daily at the specified start/end times.
-                For multi-day shifts, the times apply to each day in the duration. Emergency
-                activation overrides this schedule.
-              </p>
+      {/* Auto-activation info — admin/manager only */}
+      {isAdmin && (
+        <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div>
+                <p className="font-semibold text-blue-700 dark:text-blue-300">Automatic Daily Activation</p>
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                  Shifts automatically activate and deactivate daily at the specified start/end times.
+                  For multi-day shifts, the times apply to each day in the duration. Emergency
+                  activation overrides this schedule.
+                </p>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Shift Calendar — staff only */}
+      {!isAdmin && renderCalendar()}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
@@ -666,30 +814,32 @@ export default function ShiftsPage() {
         </Card>
       </div>
 
-      {/* Dual Status System Info */}
-      <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950">
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-3">
-            <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
-            <div>
-              <p className="font-semibold text-blue-700 dark:text-blue-300">Dual Status System</p>
-              <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
-                <strong>Account Status (isActive):</strong> Manually controlled by admins in Staff
-                Management. When deactivated, staff cannot login at all.
-              </p>
-              <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
-                <strong>Shift Time (isActive):</strong> Automatically controlled by the shift system.
-                Staff can only login during their scheduled shift hours. Updates daily at start/end
-                times.
-              </p>
-              <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
-                <strong>Both must be true</strong> for staff to login (except admin/manager who are
-                always allowed).
-              </p>
+      {/* Dual Status System Info — admin/manager only */}
+      {isAdmin && (
+        <Card className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div>
+                <p className="font-semibold text-blue-700 dark:text-blue-300">Dual Status System</p>
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">
+                  <strong>Account Status (isActive):</strong> Manually controlled by admins in Staff
+                  Management. When deactivated, staff cannot login at all.
+                </p>
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                  <strong>Shift Time (isActive):</strong> Automatically controlled by the shift system.
+                  Staff can only login during their scheduled shift hours. Updates daily at start/end
+                  times.
+                </p>
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                  <strong>Both must be true</strong> for staff to login (except admin/manager who are
+                  always allowed).
+                </p>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card>
@@ -706,22 +856,24 @@ export default function ShiftsPage() {
                 onChange={(e) => setFilterDate(e.target.value ? new Date(e.target.value) : null)}
               />
             </div>
-            <div>
-              <Label>Filter by Staff</Label>
-              <Select value={filterStaff} onValueChange={setFilterStaff}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Staff</SelectItem>
-                  {(Array.isArray(staff) ? staff : []).map((s: any) => (
-                    <SelectItem key={s._id || s.id} value={s._id || s.id}>
-                      {s.name} ({s.staffRole || s.role})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {isAdmin && (
+              <div>
+                <Label>Filter by Staff</Label>
+                <Select value={filterStaff} onValueChange={setFilterStaff}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Staff</SelectItem>
+                    {(Array.isArray(staff) ? staff : []).map((s: any) => (
+                      <SelectItem key={s._id || s.id} value={s._id || s.id}>
+                        {s.name} ({s.staffRole || s.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex items-end">
               <Button
                 variant="outline"
@@ -740,14 +892,16 @@ export default function ShiftsPage() {
       {/* Shifts List (Card-based) */}
       <Card>
         <CardHeader>
-          <CardTitle>All Shifts ({filteredShifts.length})</CardTitle>
+          <CardTitle>
+            {!isAdmin ? 'My Shifts' : 'All Shifts'} ({filteredShifts.length})
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="text-center py-8">Loading shifts...</div>
           ) : filteredShifts.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No shifts found. Create your first shift to get started.
+              {!isAdmin ? 'No shifts assigned to you yet.' : 'No shifts found. Create your first shift to get started.'}
             </div>
           ) : (
             <div className="space-y-4">

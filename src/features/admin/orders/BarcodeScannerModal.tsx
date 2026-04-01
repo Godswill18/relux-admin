@@ -21,9 +21,11 @@ import QrReader from 'react-qr-scanner';
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Path to navigate to after a successful scan. Defaults to /admin/orders/delivery-confirm */
+  confirmPath?: string;
 }
 
-export function BarcodeScannerModal({ open, onOpenChange }: Props) {
+export function BarcodeScannerModal({ open, onOpenChange, confirmPath = '/admin/orders/delivery-confirm' }: Props) {
   const navigate = useNavigate();
   const [manualMode, setManualMode] = useState(false);
   const [manualInput, setManualInput] = useState('');
@@ -45,7 +47,7 @@ export function BarcodeScannerModal({ open, onOpenChange }: Props) {
     if (!trimmed || scannedRef.current) return;
     scannedRef.current = true;
     onOpenChange(false);
-    navigate(`/admin/orders/delivery-confirm?qr=${encodeURIComponent(trimmed)}`);
+    navigate(`${confirmPath}?qr=${encodeURIComponent(trimmed)}`);
   };
 
   const handleCameraScan = (data: any) => {

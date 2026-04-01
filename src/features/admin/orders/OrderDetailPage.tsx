@@ -22,6 +22,7 @@ import {
   Wifi,
   Printer,
   ScanLine,
+  AlertTriangle,
 } from 'lucide-react';
 import { OrderReceiptModal } from './OrderReceiptModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -143,9 +144,19 @@ export default function OrderDetailPage() {
     }
   };
 
-  // Handle status change
+  // Handle status change — block delivery/completion if payment is not paid
+  const DELIVERY_STATUSES = ['delivered', 'completed'];
   const handleStatusChange = async (newStatus: string) => {
     if (!id || !order) return;
+
+    const currentPayment = order.paymentStatus || order.payment?.status || 'unpaid';
+    if (DELIVERY_STATUSES.includes(newStatus) && currentPayment !== 'paid') {
+      toast.error(
+        `Cannot mark as "${statusLabel(newStatus)}" — payment status is "${currentPayment}". Mark the order as Paid first.`
+      );
+      return;
+    }
+
     try {
       setIsUpdatingStatus(true);
       await updateOrderStatus(id, newStatus as any);
@@ -163,11 +174,8 @@ export default function OrderDetailPage() {
     if (!id || !order) return;
     try {
       setIsUpdatingPayment(true);
-      await apiClient.put(`/orders/${id}/payment`, { status: newStatus });
-      setOrder((prev: any) => ({
-        ...prev,
-        payment: { ...prev.payment, status: newStatus, ...(newStatus === 'paid' ? { paidAt: new Date().toISOString() } : {}) },
-      }));
+      await apiClient.put(`/orders/${id}`, { paymentStatus: newStatus });
+      setOrder((prev: any) => ({ ...prev, paymentStatus: newStatus }));
       toast.success(`Payment status updated to ${newStatus}`);
     } catch {
       toast.error('Failed to update payment status');
@@ -264,11 +272,15 @@ export default function OrderDetailPage() {
               <SelectValue placeholder="Update Status" />
             </SelectTrigger>
             <SelectContent>
-              {ORDER_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {statusLabel(s)}
-                </SelectItem>
-              ))}
+              {ORDER_STATUSES.map((s) => {
+                const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
+                const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
+                return (
+                  <SelectItem key={s} value={s} disabled={blocked}>
+                    {statusLabel(s)}{blocked ? ' (payment required)' : ''}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -279,6 +291,27 @@ export default function OrderDetailPage() {
         onOpenChange={setIsReceiptOpen}
         order={order}
       />
+
+      {/* Payment gate warning — shown when order is approaching delivery but not paid */}
+      {(() => {
+        const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
+        const nearDelivery = ['ready', 'out-for-delivery', 'delivered', 'completed'].includes(order.status);
+        if (nearDelivery && payStatus !== 'paid') {
+          return (
+            <div className="flex items-start gap-3 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
+              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">Payment Not Confirmed</p>
+                <p className="text-destructive/80 mt-0.5">
+                  This order's payment status is <strong className="capitalize">{payStatus}</strong>.
+                  Update the payment status to <strong>Paid</strong> before marking the order as Delivered or Completed.
+                </p>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left Column - Main Info */}
@@ -400,7 +433,7 @@ export default function OrderDetailPage() {
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Payment Status</span>
                 <Select
-                  value={payment.status || order.paymentStatus || 'unpaid'}
+                  value={order.paymentStatus || 'unpaid'}
                   onValueChange={handlePaymentStatusChange}
                   disabled={isUpdatingPayment}
                 >
@@ -408,9 +441,9 @@ export default function OrderDetailPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="unpaid">Unpaid</SelectItem>
                     <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="failed">Failed</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
                     <SelectItem value="refunded">Refunded</SelectItem>
                   </SelectContent>
                 </Select>

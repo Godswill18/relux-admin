@@ -42,6 +42,13 @@ const STAFF_STATUSES = [
   { value: 'completed',         label: 'Completed' },
 ];
 
+const PAYMENT_STATUSES = [
+  { value: 'unpaid',    label: 'Unpaid' },
+  { value: 'paid',      label: 'Paid' },
+  { value: 'partial',   label: 'Partial' },
+  { value: 'refunded',  label: 'Refunded' },
+];
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -60,24 +67,52 @@ export function UpdateStatusModal({
   onSuccess,
 }: UpdateStatusModalProps) {
   const [status, setStatus] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('');
   const [notes, setNotes] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Pre-fill payment status from the order when it opens
+  const currentPaymentStatus = order?.paymentStatus || order?.payment?.status || '';
+  if (open && !paymentStatus && currentPaymentStatus) {
+    setPaymentStatus(currentPaymentStatus);
+  }
+
   const handleSubmit = async () => {
-    if (!order || !status) return;
+    if (!order || (!status && !paymentStatus)) return;
+    const orderId = order._id || order.id;
     try {
       setIsLoading(true);
-      await apiClient.patch(`/orders/${order._id || order.id}/status`, {
-        status,
-        notes: notes.trim() || undefined,
-      });
-      toast.success(`Order status updated to "${STAFF_STATUSES.find(s => s.value === status)?.label}"`);
+
+      // Update order status (PATCH /orders/:id/status)
+      if (status) {
+        await apiClient.patch(`/orders/${orderId}/status`, {
+          status,
+          notes: notes.trim() || undefined,
+        });
+      }
+
+      // Update payment status (PUT /orders/:id with paymentStatus)
+      if (paymentStatus && paymentStatus !== currentPaymentStatus) {
+        await apiClient.put(`/orders/${orderId}`, { paymentStatus });
+      }
+
+      const statusLabel = STAFF_STATUSES.find((s) => s.value === status)?.label;
+      const payLabel    = PAYMENT_STATUSES.find((p) => p.value === paymentStatus)?.label;
+      if (statusLabel && payLabel) {
+        toast.success(`Status → ${statusLabel} · Payment → ${payLabel}`);
+      } else if (statusLabel) {
+        toast.success(`Order status updated to "${statusLabel}"`);
+      } else {
+        toast.success(`Payment status updated to "${payLabel}"`);
+      }
+
       setStatus('');
+      setPaymentStatus('');
       setNotes('');
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to update status');
+      toast.error(err?.response?.data?.message || 'Failed to update order');
     } finally {
       setIsLoading(false);
     }
@@ -86,6 +121,7 @@ export function UpdateStatusModal({
   const handleClose = () => {
     if (isLoading) return;
     setStatus('');
+    setPaymentStatus('');
     setNotes('');
     onOpenChange(false);
   };
@@ -101,7 +137,7 @@ export function UpdateStatusModal({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Update Order Status</DialogTitle>
+          <DialogTitle>Update Order</DialogTitle>
           <DialogDescription>
             Order <span className="font-mono font-semibold">{order.orderNumber}</span> —{' '}
             {customerName}
@@ -110,10 +146,10 @@ export function UpdateStatusModal({
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
-            <Label>New Status *</Label>
+            <Label>Order Status</Label>
             <Select value={status} onValueChange={setStatus}>
               <SelectTrigger>
-                <SelectValue placeholder="Select a status..." />
+                <SelectValue placeholder="Keep current status..." />
               </SelectTrigger>
               <SelectContent>
                 {STAFF_STATUSES.map((s) => (
@@ -126,12 +162,28 @@ export function UpdateStatusModal({
           </div>
 
           <div className="space-y-2">
+            <Label>Payment Status</Label>
+            <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+              <SelectTrigger>
+                <SelectValue placeholder="Keep current payment status..." />
+              </SelectTrigger>
+              <SelectContent>
+                {PAYMENT_STATUSES.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
             <Label>Notes (optional)</Label>
             <Textarea
-              placeholder="Any remarks about this status update..."
+              placeholder="Any remarks about this update..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              rows={3}
+              rows={2}
             />
           </div>
         </div>
@@ -140,9 +192,9 @@ export function UpdateStatusModal({
           <Button variant="outline" onClick={handleClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!status || isLoading}>
+          <Button onClick={handleSubmit} disabled={(!status && !paymentStatus) || isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Update Status
+            Save Changes
           </Button>
         </DialogFooter>
       </DialogContent>

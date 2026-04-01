@@ -45,6 +45,8 @@ export default function Login() {
     }
   }
 
+  const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'receptionist'];
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -54,6 +56,14 @@ export default function Login() {
 
       const currentUser = useAuthStore.getState().user;
       if (currentUser) {
+        // Block non-staff roles (e.g. customers) from accessing the dashboard
+        if (!ALLOWED_ROLES.includes((currentUser.role as string).toLowerCase())) {
+          useAuthStore.getState().logout();
+          toast.error('Access denied. This portal is for staff only.');
+          setIsSubmitting(false);
+          return;
+        }
+
         toast.success(`Welcome back, ${currentUser.name}!`);
 
         // Redirect based on role

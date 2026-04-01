@@ -2,24 +2,35 @@
 // DELIVERY CONFIRM PAGE
 // Step 1: Look up order by scanned QR code
 // Step 2: Show details + require authenticated staff to confirm delivery
+// Rule:   Payment must be "paid" before delivery can be confirmed
 // ============================================================================
 
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Package,
-  User, Phone, Mail, Clock, ShieldCheck,
+  User, Phone, Mail, Clock, ShieldCheck, CreditCard, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { OrderStatusBadge } from '@/components/shared/StatusBadges';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useOrderStore } from '@/stores/useOrderStore';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import apiClient from '@/lib/api/client';
+
+const PAYMENT_STATUSES = [
+  { value: 'unpaid',   label: 'Unpaid' },
+  { value: 'paid',     label: 'Paid' },
+  { value: 'partial',  label: 'Partial' },
+  { value: 'refunded', label: 'Refunded' },
+];
 
 // ============================================================================
 // DELIVERY CONFIRM PAGE COMPONENT
@@ -32,12 +43,20 @@ export default function DeliveryConfirmPage() {
   const { user, isAuthenticated } = useAuthStore();
   const { fetchOrders } = useOrderStore();
 
+  // Resolve base path based on role so staff are sent back to /staff/orders
+  const isStaff = (user?.role as string)?.toLowerCase() === 'staff';
+  const basePath = isStaff ? '/staff/orders' : '/admin/orders';
+
   const [order, setOrder] = useState<any>(null);
   const [lookupLoading, setLookupLoading] = useState(true);
   const [lookupError, setLookupError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [deliveredAt, setDeliveredAt] = useState('');
+
+  // Payment status update
+  const [paymentStatus, setPaymentStatus] = useState('');
+  const [updatingPayment, setUpdatingPayment] = useState(false);
 
   // ── Step 1: look up order by QR ──────────────────────────────────────────
   useEffect(() => {
@@ -52,7 +71,9 @@ export default function DeliveryConfirmPage() {
         setLookupLoading(true);
         const res = await apiClient.post('/orders/lookup-by-qr', { qrCode });
         if (res.data.success) {
-          setOrder(res.data.data.order);
+          const fetched = res.data.data.order;
+          setOrder(fetched);
+          setPaymentStatus(fetched.paymentStatus || fetched.payment?.status || 'unpaid');
         } else {
           setLookupError(res.data.message || 'Order not found');
         }
@@ -71,6 +92,28 @@ export default function DeliveryConfirmPage() {
     lookup();
   }, [qrCode]);
 
+  // ── Update payment status ─────────────────────────────────────────────────
+  const handleUpdatePayment = async (overrideStatus?: string) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    const newStatus = overrideStatus ?? paymentStatus;
+    if (!newStatus) return;
+    try {
+      setUpdatingPayment(true);
+      await apiClient.put(`/orders/${orderId}`, { paymentStatus: newStatus });
+      setOrder((prev: any) => ({ ...prev, paymentStatus: newStatus }));
+      setPaymentStatus(newStatus);
+      toast.success(`Payment status updated to "${PAYMENT_STATUSES.find(p => p.value === newStatus)?.label}"`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update payment status');
+    } finally {
+      setUpdatingPayment(false);
+    }
+  };
+
+  // ── Quick mark as paid ────────────────────────────────────────────────────
+  const handleMarkAsPaid = () => handleUpdatePayment('paid');
+
   // ── Step 2: confirm delivery ──────────────────────────────────────────────
   const handleConfirm = async () => {
     if (!order) return;
@@ -82,7 +125,7 @@ export default function DeliveryConfirmPage() {
         const ts = res.data.data.order?.actualDeliveryDate ?? new Date().toISOString();
         setDeliveredAt(format(new Date(ts), 'MMM dd, yyyy · h:mm a'));
         setConfirmed(true);
-        fetchOrders(); // refresh background list
+        fetchOrders();
         toast.success('Order marked as delivered');
       } else {
         throw new Error(res.data.message || 'Confirmation failed');
@@ -105,6 +148,11 @@ export default function DeliveryConfirmPage() {
   const items: any[] = order?.items ?? [];
   const pricing = order?.pricing ?? {};
   const alreadyDelivered = ['delivered', 'completed'].includes(order?.status ?? '');
+
+  // Current payment status on the order object (kept in sync after update)
+  const currentPaymentStatus = order?.paymentStatus || order?.payment?.status || 'unpaid';
+  const isPaid = currentPaymentStatus === 'paid';
+  const paymentChanged = paymentStatus !== currentPaymentStatus;
 
   // ── RENDER ────────────────────────────────────────────────────────────────
 
@@ -138,7 +186,7 @@ export default function DeliveryConfirmPage() {
             <XCircle className="h-12 w-12 text-destructive" />
             <p className="font-semibold text-destructive">Order Not Found</p>
             <p className="text-sm text-muted-foreground text-center max-w-xs">{lookupError}</p>
-            <Button variant="outline" onClick={() => navigate('/admin/orders')}>
+            <Button variant="outline" onClick={() => navigate(basePath)}>
               Back to Orders
             </Button>
           </CardContent>
@@ -166,10 +214,10 @@ export default function DeliveryConfirmPage() {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 pt-2 w-full sm:w-auto">
-              <Button variant="outline" onClick={() => navigate('/admin/orders/delivered')}>
+              <Button variant="outline" onClick={() => navigate(`${basePath}/delivered`)}>
                 View Delivered Orders
               </Button>
-              <Button onClick={() => navigate('/admin/orders')}>Back to Orders</Button>
+              <Button onClick={() => navigate(basePath)}>Back to Orders</Button>
             </div>
           </CardContent>
         </Card>
@@ -188,15 +236,63 @@ export default function DeliveryConfirmPage() {
             </div>
           )}
 
+          {/* Unpaid warning — blocks delivery */}
+          {!alreadyDelivered && !isPaid && (
+            <div className="rounded-lg border border-destructive bg-destructive/10 p-4 space-y-3">
+              <div className="flex items-start gap-3 text-sm text-destructive">
+                <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Payment Required Before Delivery</p>
+                  <p className="mt-0.5 text-destructive/80">
+                    The customer has not completed payment for this order (current status:{' '}
+                    <strong className="capitalize">{currentPaymentStatus}</strong>).
+                    The customer must make payment before this order can be confirmed as delivered.
+                  </p>
+                </div>
+              </div>
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                onClick={handleMarkAsPaid}
+                disabled={updatingPayment}
+              >
+                {updatingPayment
+                  ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating Payment…</>
+                  : <><CreditCard className="mr-2 h-4 w-4" />Mark as Paid</>
+                }
+              </Button>
+            </div>
+          )}
+
           {/* Order summary */}
-          <Card>
+          <Card className="relative overflow-hidden">
+            {/* ── Payment stamp watermark ── */}
+            {(() => {
+              const stampConfig: Record<string, { label: string; color: string; rotate: string }> = {
+                paid:     { label: 'PAID',     color: 'text-green-600  border-green-600  dark:text-green-500  dark:border-green-500',  rotate: '-rotate-12' },
+                unpaid:   { label: 'UNPAID',   color: 'text-red-500    border-red-500    dark:text-red-400    dark:border-red-400',    rotate: '-rotate-12' },
+                partial:  { label: 'PARTIAL',  color: 'text-amber-500  border-amber-500  dark:text-amber-400  dark:border-amber-400',  rotate: '-rotate-12' },
+                refunded: { label: 'REFUNDED', color: 'text-blue-500   border-blue-500   dark:text-blue-400   dark:border-blue-400',   rotate: '-rotate-12' },
+              };
+              const s = stampConfig[currentPaymentStatus] ?? stampConfig.unpaid;
+              return (
+                <div className={`pointer-events-none absolute inset-0 flex items-center justify-center z-10`}>
+                  <span className={`${s.rotate} ${s.color} border-[3px] rounded-md px-4 py-1 text-4xl font-black tracking-widest uppercase opacity-20 select-none`}>
+                    {s.label}
+                  </span>
+                </div>
+              );
+            })()}
+
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
+              <CardTitle className="flex items-center justify-between flex-wrap gap-2">
                 <span className="flex items-center gap-2">
                   <Package className="h-5 w-5" />
                   {order.orderNumber}
                 </span>
-                <OrderStatusBadge status={order.status} />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <OrderStatusBadge status={order.status} />
+                  <PaymentStatusBadge status={currentPaymentStatus} />
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -279,6 +375,7 @@ export default function DeliveryConfirmPage() {
             </CardContent>
           </Card>
 
+
           {/* Staff authentication confirmation */}
           {isAuthenticated && user && (
             <Card>
@@ -292,30 +389,37 @@ export default function DeliveryConfirmPage() {
             </Card>
           )}
 
-          {/* Confirm button */}
+          {/* Confirm button — blocked when not paid */}
           {!alreadyDelivered && (
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={handleConfirm}
-              disabled={confirming || !isAuthenticated}
-            >
-              {confirming ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Confirming Delivery…
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="mr-2 h-5 w-5" />
-                  Confirm Delivery
-                </>
+            <div className="space-y-2">
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={handleConfirm}
+                disabled={confirming || !isAuthenticated || !isPaid}
+              >
+                {confirming ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Confirming Delivery…
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="mr-2 h-5 w-5" />
+                    Confirm Delivery
+                  </>
+                )}
+              </Button>
+              {!isPaid && (
+                <p className="text-xs text-center text-muted-foreground">
+                  Delivery confirmation is disabled until payment is marked as <strong>Paid</strong>.
+                </p>
               )}
-            </Button>
+            </div>
           )}
 
           {alreadyDelivered && (
-            <Button variant="outline" className="w-full" onClick={() => navigate('/admin/orders/delivered')}>
+            <Button variant="outline" className="w-full" onClick={() => navigate(`${basePath}/delivered`)}>
               View Delivered Orders
             </Button>
           )}

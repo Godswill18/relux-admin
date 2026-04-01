@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { useThemeStore } from '@/stores/useThemeStore';
 import { useAuthStore, useCurrentUser } from '@/stores/useAuthStore';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   DropdownMenu,
@@ -156,6 +156,8 @@ export function BaseLayout({
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="w-64 p-0">
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+                <SheetDescription className="sr-only">Site navigation links</SheetDescription>
                 <div className="flex h-full flex-col">
                   {/* Mobile Logo */}
                   <div className="flex items-center justify-between border-b p-4">

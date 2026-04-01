@@ -17,26 +17,38 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('business');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold">System Settings</h1>
-        <p className="text-muted-foreground">Configure system-wide settings</p>
+        <h1 className="text-2xl sm:text-3xl font-bold">System Settings</h1>
+        <p className="text-muted-foreground text-sm">Configure system-wide settings</p>
       </div>
 
       {/* Settings Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="business">Business Info</TabsTrigger>
-          <TabsTrigger value="email">Email/SMS</TabsTrigger>
-          <TabsTrigger value="payment">Payment Gateways</TabsTrigger>
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="roles" className="flex items-center gap-1.5">
-            <Shield className="h-3.5 w-3.5" />
-            Roles & Permissions
-          </TabsTrigger>
-        </TabsList>
+        {/* Tab strip — scrollable on mobile */}
+        <div className="w-full overflow-x-auto">
+          <TabsList className="flex w-max min-w-full sm:w-auto sm:min-w-0">
+            <TabsTrigger value="business" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap">
+              Business Info
+            </TabsTrigger>
+            <TabsTrigger value="email" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap">
+              Email/SMS
+            </TabsTrigger>
+            <TabsTrigger value="payment" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap">
+              Payment
+            </TabsTrigger>
+            <TabsTrigger value="general" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap">
+              General
+            </TabsTrigger>
+            <TabsTrigger value="roles" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
+              <Shield className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              Roles
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
+        {/* ── Business Info ──────────────────────────────────────────────── */}
         <TabsContent value="business">
           <Card>
             <CardHeader>
@@ -53,24 +65,25 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="grid gap-2">
-                <Label htmlFor="businessEmail">Business Email</Label>
-                <Input
-                  id="businessEmail"
-                  type="email"
-                  placeholder="info@reluxlaundry.com"
-                  defaultValue="info@reluxlaundry.com"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="businessPhone">Business Phone</Label>
-                <Input
-                  id="businessPhone"
-                  type="tel"
-                  placeholder="+234 800 000 0000"
-                  defaultValue="+234 800 000 0000"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="businessEmail">Business Email</Label>
+                  <Input
+                    id="businessEmail"
+                    type="email"
+                    placeholder="info@reluxlaundry.com"
+                    defaultValue="info@reluxlaundry.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="businessPhone">Business Phone</Label>
+                  <Input
+                    id="businessPhone"
+                    type="tel"
+                    placeholder="+234 800 000 0000"
+                    defaultValue="+234 800 000 0000"
+                  />
+                </div>
               </div>
 
               <div className="grid gap-2">
@@ -86,7 +99,7 @@ export default function SettingsPage() {
               <Separator />
 
               <div className="flex justify-end">
-                <Button>
+                <Button className="w-full sm:w-auto">
                   <Save className="mr-2 h-4 w-4" />
                   Save Changes
                 </Button>
@@ -95,6 +108,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ── Email / SMS ───────────────────────────────────────────────── */}
         <TabsContent value="email">
           <Card>
             <CardHeader>
@@ -104,8 +118,8 @@ export default function SettingsPage() {
             <CardContent className="space-y-6">
               {/* SMTP Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">SMTP Settings</h3>
-                <div className="grid gap-4">
+                <h3 className="text-base font-medium">SMTP Settings</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="smtpHost">SMTP Host</Label>
                     <Input id="smtpHost" placeholder="smtp.gmail.com" />
@@ -129,9 +143,9 @@ export default function SettingsPage() {
 
               {/* Twilio Settings */}
               <div className="space-y-4">
-                <h3 className="text-lg font-medium">Twilio SMS Settings</h3>
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
+                <h3 className="text-base font-medium">Twilio SMS Settings</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid gap-2 sm:col-span-2">
                     <Label htmlFor="twilioSid">Account SID</Label>
                     <Input id="twilioSid" placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
                   </div>
@@ -149,7 +163,7 @@ export default function SettingsPage() {
               <Separator />
 
               <div className="flex justify-end">
-                <Button>
+                <Button className="w-full sm:w-auto">
                   <Save className="mr-2 h-4 w-4" />
                   Save Settings
                 </Button>
@@ -158,6 +172,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ── Payment ───────────────────────────────────────────────────── */}
         <TabsContent value="payment">
           <Card>
             <CardHeader>
@@ -165,13 +180,14 @@ export default function SettingsPage() {
               <CardDescription>Configure payment gateway API keys</CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 Payment gateway settings are managed in the Payment Management section.
               </p>
             </CardContent>
           </Card>
         </TabsContent>
 
+        {/* ── General ───────────────────────────────────────────────────── */}
         <TabsContent value="general">
           <Card>
             <CardHeader>
@@ -179,25 +195,25 @@ export default function SettingsPage() {
               <CardDescription>System-wide configuration options</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-2">
-                <Label htmlFor="currency">Default Currency</Label>
-                <Input id="currency" defaultValue="NGN (₦)" disabled />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="timezone">Timezone</Label>
-                <Input id="timezone" defaultValue="Africa/Lagos" />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="dateFormat">Date Format</Label>
-                <Input id="dateFormat" defaultValue="MMM dd, yyyy" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="currency">Default Currency</Label>
+                  <Input id="currency" defaultValue="NGN (₦)" disabled />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <Input id="timezone" defaultValue="Africa/Lagos" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="dateFormat">Date Format</Label>
+                  <Input id="dateFormat" defaultValue="MMM dd, yyyy" />
+                </div>
               </div>
 
               <Separator />
 
               <div className="flex justify-end">
-                <Button>
+                <Button className="w-full sm:w-auto">
                   <Save className="mr-2 h-4 w-4" />
                   Save Settings
                 </Button>
@@ -206,6 +222,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* ── Roles & Permissions ───────────────────────────────────────── */}
         <TabsContent value="roles">
           <RolesPermissionsTab />
         </TabsContent>

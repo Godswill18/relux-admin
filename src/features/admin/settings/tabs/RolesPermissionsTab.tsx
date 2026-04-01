@@ -174,13 +174,7 @@ export function RolesPermissionsTab() {
   const [unsavedWarnTarget, setUnsavedWarnTarget] = useState<string | null>(null);
   const [assignDialogUser, setAssignDialogUser] = useState<any>(null);
 
-  // ── Load roles on mount ────────────────────────────────────────────────────
-
-  useEffect(() => {
-    fetchRoles();
-  }, [fetchRoles]);
-
-  // ── Auto-select first role when loaded ─────────────────────────────────────
+  useEffect(() => { fetchRoles(); }, [fetchRoles]);
 
   useEffect(() => {
     if (roles.length > 0 && !selectedId) {
@@ -189,13 +183,9 @@ export function RolesPermissionsTab() {
     }
   }, [roles]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fetch users for selected role ──────────────────────────────────────────
-
   useEffect(() => {
     if (selectedId) fetchRoleUsers(selectedId);
   }, [selectedId, fetchRoleUsers]);
-
-  // ── Helpers ────────────────────────────────────────────────────────────────
 
   const selectedRole = roles.find((r) => r._id === selectedId) ?? null;
   const isAdmin = selectedRole?.name === 'admin';
@@ -247,8 +237,6 @@ export function RolesPermissionsTab() {
 
   const usersForRole = selectedId ? (roleUsers[selectedId] ?? []) : [];
 
-  // ── Loading skeleton ───────────────────────────────────────────────────────
-
   if (isLoading && roles.length === 0) {
     return (
       <div className="space-y-4">
@@ -258,167 +246,110 @@ export function RolesPermissionsTab() {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div className="flex gap-6 items-start">
-      {/* ── Left: Role selector ─────────────────────────────────────────── */}
-      <div className="w-52 shrink-0 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-3">
-          Roles
-        </p>
-        {roles.map((role) => {
-          const users = roleUsers[role._id] ?? [];
-          const active = role._id === selectedId;
-
-          return (
-            <button
-              key={role._id}
-              type="button"
-              onClick={() => handleRoleClick(role._id)}
-              className={cn(
-                'w-full text-left rounded-lg border px-3 py-2.5 transition-colors',
-                active
-                  ? 'border-primary bg-primary/5 shadow-sm'
-                  : 'hover:bg-muted/50 bg-card'
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-sm capitalize">{role.name}</span>
-                {role.name === 'admin' && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
-              </div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {role.name === 'admin' ? 'Full access' : `${role.permissions.length} permissions`}
-              </p>
-              {users.length > 0 && (
-                <Badge variant="secondary" className="mt-1 text-[10px] h-4 px-1.5">
-                  <Users className="h-2.5 w-2.5 mr-1" />
-                  {users.length}
-                </Badge>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Right: Permissions + Users ──────────────────────────────────── */}
-      <div className="flex-1 min-w-0 space-y-4">
-        {selectedRole ? (
-          <>
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold capitalize flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  {selectedRole.name} Permissions
-                </h3>
-                {isAdmin ? (
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Admin role always has all permissions and cannot be modified.
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    {draft.size} of {Object.values(PERMISSION_GROUPS).flat().length} permissions enabled
-                  </p>
+    <div className="space-y-4">
+      {/* ── Mobile: role selector as horizontal scroll strip ─────────────── */}
+      <div className="md:hidden">
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          {roles.map((role) => {
+            const active = role._id === selectedId;
+            return (
+              <button
+                key={role._id}
+                type="button"
+                onClick={() => handleRoleClick(role._id)}
+                className={cn(
+                  'shrink-0 rounded-lg border px-3 py-2 text-left transition-colors',
+                  active
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'hover:bg-muted/50 bg-card'
                 )}
-              </div>
-
-              {!isAdmin && (
-                <div className="flex items-center gap-2">
-                  {isDirty && (
-                    <span className="text-xs text-orange-500 flex items-center gap-1">
-                      <AlertTriangle className="h-3.5 w-3.5" /> Unsaved
-                    </span>
-                  )}
-                  <Button variant="outline" size="sm" onClick={handleReset} disabled={!isDirty}>
-                    Reset
-                  </Button>
-                  <Button size="sm" onClick={handleSave} disabled={!isDirty || isSaving}>
-                    {isSaving ? 'Saving…' : 'Save Changes'}
-                  </Button>
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="font-medium text-sm capitalize whitespace-nowrap">{role.name}</span>
+                  {role.name === 'admin' && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
                 </div>
-              )}
-            </div>
-
-            {/* Permission Matrix */}
-            <div className="space-y-3">
-              {Object.entries(PERMISSION_GROUPS).map(([group, perms]) => (
-                <PermissionGroup
-                  key={group}
-                  group={group}
-                  permissions={perms}
-                  draft={draft}
-                  locked={isAdmin}
-                  onToggle={togglePermission}
-                />
-              ))}
-            </div>
-
-            {/* Users in this role */}
-            <Separator />
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" />
-                  Users with this role
-                </CardTitle>
-                <CardDescription>
-                  {usersForRole.length === 0
-                    ? 'No users currently assigned to this role'
-                    : `${usersForRole.length} user${usersForRole.length !== 1 ? 's' : ''} assigned`}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {usersForRole.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No users found
-                  </p>
-                ) : (
-                  <div className="space-y-0">
-                    {usersForRole.map((u: any, i: number) => (
-                      <div key={u._id ?? i}>
-                        {i > 0 && <Separator />}
-                        <div className="flex items-center justify-between py-3 gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{u.name}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {u.email || u.phone}
-                              {u.staffRole ? ` · ${u.staffRole}` : ''}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <Badge
-                              variant={u.isActive ? 'default' : 'secondary'}
-                              className="text-xs"
-                            >
-                              {u.isActive ? 'Active' : 'Inactive'}
-                            </Badge>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => setAssignDialogUser(u)}
-                            >
-                              Change Role
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-16">
-            Select a role on the left to manage its permissions.
-          </p>
-        )}
+                <p className="text-[10px] text-muted-foreground mt-0.5 whitespace-nowrap">
+                  {role.name === 'admin' ? 'Full access' : `${role.permissions.length} perms`}
+                </p>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Unsaved changes guard ────────────────────────────────────────── */}
+      {/* ── Desktop: sidebar + panel layout ──────────────────────────────── */}
+      <div className="hidden md:flex gap-6 items-start">
+        {/* Left: Role selector */}
+        <div className="w-52 shrink-0 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-3">
+            Roles
+          </p>
+          {roles.map((role) => {
+            const users = roleUsers[role._id] ?? [];
+            const active = role._id === selectedId;
+            return (
+              <button
+                key={role._id}
+                type="button"
+                onClick={() => handleRoleClick(role._id)}
+                className={cn(
+                  'w-full text-left rounded-lg border px-3 py-2.5 transition-colors',
+                  active
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'hover:bg-muted/50 bg-card'
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-sm capitalize">{role.name}</span>
+                  {role.name === 'admin' && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {role.name === 'admin' ? 'Full access' : `${role.permissions.length} permissions`}
+                </p>
+                {users.length > 0 && (
+                  <Badge variant="secondary" className="mt-1 text-[10px] h-4 px-1.5">
+                    <Users className="h-2.5 w-2.5 mr-1" />
+                    {users.length}
+                  </Badge>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right: Permissions + Users */}
+        <PermissionsPanel
+          selectedRole={selectedRole}
+          isAdmin={isAdmin}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          draft={draft}
+          usersForRole={usersForRole}
+          onToggle={togglePermission}
+          onSave={handleSave}
+          onReset={handleReset}
+          onAssignUser={setAssignDialogUser}
+        />
+      </div>
+
+      {/* ── Mobile: permissions panel below role strip ────────────────────── */}
+      <div className="md:hidden">
+        <PermissionsPanel
+          selectedRole={selectedRole}
+          isAdmin={isAdmin}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          draft={draft}
+          usersForRole={usersForRole}
+          onToggle={togglePermission}
+          onSave={handleSave}
+          onReset={handleReset}
+          onAssignUser={setAssignDialogUser}
+        />
+      </div>
+
+      {/* ── Unsaved changes guard ─────────────────────────────────────────── */}
       <Dialog open={!!unsavedWarnTarget} onOpenChange={() => setUnsavedWarnTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -444,7 +375,7 @@ export function RolesPermissionsTab() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Assign role dialog ───────────────────────────────────────────── */}
+      {/* ── Assign role dialog ────────────────────────────────────────────── */}
       {assignDialogUser && (
         <AssignRoleDialog
           open={!!assignDialogUser}
@@ -453,11 +384,153 @@ export function RolesPermissionsTab() {
           roles={roles}
           onAssign={async (roleId) => {
             await assignUserToRole(roleId, assignDialogUser._id);
-            // Refresh all role user lists
             roles.forEach((r) => fetchRoleUsers(r._id));
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// PERMISSIONS PANEL (shared between mobile + desktop)
+// ============================================================================
+
+interface PermissionsPanelProps {
+  selectedRole: RoleDoc | null;
+  isAdmin: boolean;
+  isDirty: boolean;
+  isSaving: boolean;
+  draft: Set<string>;
+  usersForRole: any[];
+  onToggle: (perm: string) => void;
+  onSave: () => void;
+  onReset: () => void;
+  onAssignUser: (user: any) => void;
+}
+
+function PermissionsPanel({
+  selectedRole,
+  isAdmin,
+  isDirty,
+  isSaving,
+  draft,
+  usersForRole,
+  onToggle,
+  onSave,
+  onReset,
+  onAssignUser,
+}: PermissionsPanelProps) {
+  if (!selectedRole) {
+    return (
+      <p className="text-sm text-muted-foreground text-center py-16">
+        Select a role above to manage its permissions.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex-1 min-w-0 space-y-4">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-base sm:text-lg font-semibold capitalize flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary shrink-0" />
+            {selectedRole.name} Permissions
+          </h3>
+          {isAdmin ? (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Admin role always has all permissions and cannot be modified.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {draft.size} of {Object.values(PERMISSION_GROUPS).flat().length} permissions enabled
+            </p>
+          )}
+        </div>
+
+        {!isAdmin && (
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+            {isDirty && (
+              <span className="text-xs text-orange-500 flex items-center gap-1">
+                <AlertTriangle className="h-3.5 w-3.5" /> Unsaved
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={onReset} disabled={!isDirty} className="flex-1 sm:flex-none">
+              Reset
+            </Button>
+            <Button size="sm" onClick={onSave} disabled={!isDirty || isSaving} className="flex-1 sm:flex-none">
+              {isSaving ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Permission Matrix */}
+      <div className="space-y-3">
+        {Object.entries(PERMISSION_GROUPS).map(([group, perms]) => (
+          <PermissionGroup
+            key={group}
+            group={group}
+            permissions={perms}
+            draft={draft}
+            locked={isAdmin}
+            onToggle={onToggle}
+          />
+        ))}
+      </div>
+
+      {/* Users in this role */}
+      <Separator />
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="h-4 w-4 text-primary" />
+            Users with this role
+          </CardTitle>
+          <CardDescription>
+            {usersForRole.length === 0
+              ? 'No users currently assigned to this role'
+              : `${usersForRole.length} user${usersForRole.length !== 1 ? 's' : ''} assigned`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {usersForRole.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No users found</p>
+          ) : (
+            <div className="space-y-0">
+              {usersForRole.map((u: any, i: number) => (
+                <div key={u._id ?? i}>
+                  {i > 0 && <Separator />}
+                  <div className="flex items-center justify-between py-3 gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{u.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {u.email || u.phone}
+                        {u.staffRole ? ` · ${u.staffRole}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={u.isActive ? 'default' : 'secondary'} className="text-xs hidden xs:inline-flex">
+                        {u.isActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => onAssignUser(u)}
+                      >
+                        Change Role
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

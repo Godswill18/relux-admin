@@ -54,6 +54,7 @@ export default function SubscriptionsPage() {
   } = useSubscriptionStore();
 
   const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
+  const [editPlanTarget, setEditPlanTarget] = useState<SubscriptionPlan | null>(null);
   const [activeTab, setActiveTab] = useState('plans');
   const [deletePlanTarget, setDeletePlanTarget] = useState<SubscriptionPlan | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -150,7 +151,7 @@ export default function SubscriptionsPage() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setEditPlanTarget(plan)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Edit Plan
               </DropdownMenuItem>
@@ -303,19 +304,21 @@ export default function SubscriptionsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-3xl font-bold">Subscription Management</h1>
-        <p className="text-muted-foreground">Manage subscription plans and active subscriptions</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold">Subscription Management</h1>
+          <p className="text-muted-foreground text-sm">Manage subscription plans and active subscriptions</p>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
+            <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{activeSubs}</div>
@@ -326,7 +329,7 @@ export default function SubscriptionsPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Subscribers</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalSubs}</div>
@@ -334,10 +337,10 @@ export default function SubscriptionsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="col-span-2 md:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">₦{monthlyRevenue.toLocaleString()}</div>
@@ -348,31 +351,90 @@ export default function SubscriptionsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="plans">Subscription Plans</TabsTrigger>
-          <TabsTrigger value="subscriptions">Active Subscriptions</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="plans" className="flex-1 sm:flex-none">Subscription Plans</TabsTrigger>
+          <TabsTrigger value="subscriptions" className="flex-1 sm:flex-none">Active Subscriptions</TabsTrigger>
         </TabsList>
 
         <TabsContent value="plans">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4">
               <div>
                 <CardTitle>Subscription Plans</CardTitle>
                 <CardDescription>Plans customers can subscribe to from the app</CardDescription>
               </div>
-              <Button onClick={() => setIsAddPlanOpen(true)}>
+              <Button onClick={() => setIsAddPlanOpen(true)} className="w-full sm:w-auto">
                 <Plus className="mr-2 h-4 w-4" />
                 Add Plan
               </Button>
             </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={planColumns}
-                data={plans}
-                searchKey="name"
-                searchPlaceholder="Search plans..."
-                isLoading={isLoading}
-              />
+            <CardContent className="px-3 sm:px-6">
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+                  ))
+                ) : plans.length === 0 ? (
+                  <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                    <CreditCard className="h-8 w-8 opacity-30 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No plans found</p>
+                  </CardContent></Card>
+                ) : plans.map((plan) => (
+                  <Card key={plan._id || plan.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-sm">{plan.name}</span>
+                            <PlanActiveBadge active={plan.active} />
+                          </div>
+                          {plan.description && (
+                            <p className="text-sm text-muted-foreground line-clamp-2">{plan.description}</p>
+                          )}
+                          <div className="flex items-center gap-3 flex-wrap text-sm">
+                            <span className="font-medium">₦{(plan.price ?? 0).toLocaleString()}</span>
+                            <span className="text-muted-foreground">{plan.durationDays} days</span>
+                            <span className="text-muted-foreground">Limit: {plan.itemLimit ?? '∞'}</span>
+                          </div>
+                          {(plan.features || []).length > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              {plan.features!.length} feature{plan.features!.length !== 1 ? 's' : ''}
+                            </p>
+                          )}
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => setEditPlanTarget(plan)}>
+                              <Edit className="mr-2 h-4 w-4" />Edit Plan
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setDeletePlanTarget(plan)} className="text-destructive">
+                              <Trash className="mr-2 h-4 w-4" />Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={planColumns}
+                  data={plans}
+                  searchKey="name"
+                  searchPlaceholder="Search plans..."
+                  isLoading={isLoading}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -383,20 +445,106 @@ export default function SubscriptionsPage() {
               <CardTitle>Active Subscriptions</CardTitle>
               <CardDescription>All customer subscriptions and their status</CardDescription>
             </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={subColumns}
-                data={subscriptions}
-                searchKey="planName"
-                searchPlaceholder="Search by plan name..."
-                isLoading={isLoading}
-              />
+            <CardContent className="px-3 sm:px-6">
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {isLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+                  ))
+                ) : subscriptions.length === 0 ? (
+                  <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                    <Users className="h-8 w-8 opacity-30 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No subscriptions found</p>
+                  </CardContent></Card>
+                ) : subscriptions.map((sub) => {
+                  const customer = typeof sub.customerId === 'object' ? sub.customerId : null;
+                  const plan = typeof sub.planId === 'object' ? sub.planId : null;
+                  const id = sub._id || sub.id;
+                  return (
+                    <Card key={id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <SubscriptionStatusBadge status={sub.status} />
+                              {sub.autoRenew && (
+                                <Badge variant="outline" className="text-xs">Auto-Renew</Badge>
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm">{customer?.name || '—'}</p>
+                              {customer?.phone && (
+                                <p className="text-xs text-muted-foreground">{customer.phone}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap text-sm">
+                              <span className="text-muted-foreground">{plan?.name || (sub as any).planName || '—'}</span>
+                              {plan && <span className="font-medium">₦{(plan.price ?? 0).toLocaleString()}</span>}
+                            </div>
+                            {(sub.periodStart || sub.periodEnd) && (
+                              <p className="text-xs text-muted-foreground">
+                                {sub.periodStart ? new Date(sub.periodStart).toLocaleDateString() : '—'}
+                                {' – '}
+                                {sub.periodEnd ? new Date(sub.periodEnd).toLocaleDateString() : '—'}
+                              </p>
+                            )}
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              {sub.status === 'active' && (
+                                <DropdownMenuItem onClick={async () => { try { await pauseSubscription(id); toast.success('Subscription paused'); } catch { toast.error('Failed to pause'); } }}>
+                                  <Pause className="mr-2 h-4 w-4" />Pause
+                                </DropdownMenuItem>
+                              )}
+                              {sub.status === 'paused' && (
+                                <DropdownMenuItem onClick={async () => { try { await resumeSubscription(id); toast.success('Subscription resumed'); } catch { toast.error('Failed to resume'); } }}>
+                                  <Play className="mr-2 h-4 w-4" />Resume
+                                </DropdownMenuItem>
+                              )}
+                              {(sub.status === 'active' || sub.status === 'paused') && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem className="text-destructive" onClick={async () => { try { await cancelSubscription(id); toast.success('Subscription cancelled'); } catch { toast.error('Failed to cancel'); } }}>
+                                    <XCircle className="mr-2 h-4 w-4" />Cancel
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={subColumns}
+                  data={subscriptions}
+                  searchKey="planName"
+                  searchPlaceholder="Search by plan name..."
+                  isLoading={isLoading}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
       <AddPlanModal open={isAddPlanOpen} onOpenChange={setIsAddPlanOpen} />
+      <AddPlanModal
+        open={!!editPlanTarget}
+        onOpenChange={(open) => !open && setEditPlanTarget(null)}
+        plan={editPlanTarget}
+      />
 
       <ConfirmDialog
         open={!!deletePlanTarget}

@@ -79,9 +79,10 @@ type CreateOrderForm = z.infer<typeof createOrderSchema>;
 interface CreateOrderModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
 }
 
-export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) {
+export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderModalProps) {
   const { createOrder } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const {
@@ -232,6 +233,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
       form.reset();
       setCustomerSearch('');
       onOpenChange(false);
+      onSuccess?.();
     } catch {
       toast.error('Failed to create order');
     }
@@ -288,7 +290,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
             </div>
 
             {/* Required customer fields */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={form.control}
                 name="walkInCustomer.name"
@@ -321,7 +323,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
           <Separator />
 
           {/* ── Order Configuration ────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="serviceLevel"
@@ -399,8 +401,8 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
               </Button>
             </div>
 
-            {/* Column headers */}
-            <div className="grid grid-cols-12 gap-2 px-1">
+            {/* ── Desktop column headers (hidden on mobile) ──────────── */}
+            <div className="hidden md:grid grid-cols-12 gap-2 px-1">
               <span className="col-span-3 text-xs text-muted-foreground font-medium">Service</span>
               <span className="col-span-3 text-xs text-muted-foreground font-medium">Item</span>
               <span className="col-span-2 text-xs text-muted-foreground font-medium">Qty</span>
@@ -415,146 +417,173 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
               const categoriesForService = getCategoriesForService(selectedServiceId);
               const matchedCategory      = categoriesForService.find((c) => c.name === selectedItemType);
               const isAutoFilled         = matchedCategory && matchedCategory.basePrice === watchItems[index]?.unitPrice;
+              const rowTotal             = (watchItems[index]?.quantity || 0) * (watchItems[index]?.unitPrice || 0);
+
+              // ── Shared field fragments ──────────────────────────────
+              const ServiceField = (
+                <FormField
+                  control={form.control}
+                  name={`items.${index}.serviceId`}
+                  render={({ field: f }) => (
+                    <FormItem>
+                      <Select value={f.value} onValueChange={(val) => handleServiceChange(index, val)}>
+                        <FormControl>
+                          <SelectTrigger className="h-9 w-full">
+                            <SelectValue placeholder="Select service" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {activeServices.length === 0 ? (
+                            <SelectItem value="__none" disabled>No services — add on Services page</SelectItem>
+                          ) : (
+                            activeServices.map((s) => (
+                              <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name}</SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+
+              const ItemField = (
+                <FormField
+                  control={form.control}
+                  name={`items.${index}.itemType`}
+                  render={({ field: f }) => (
+                    <FormItem>
+                      <Select
+                        value={f.value}
+                        onValueChange={(val) => handleItemChange(index, val)}
+                        disabled={!selectedServiceId}
+                      >
+                        <FormControl>
+                          <SelectTrigger className="h-9 w-full">
+                            <SelectValue placeholder={selectedServiceId ? 'Select item' : 'Pick service first'} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {categoriesForService.length === 0 ? (
+                            <SelectItem value="__none" disabled>No items for this service</SelectItem>
+                          ) : (
+                            categoriesForService.map((c) => (
+                              <SelectItem key={c.id || c._id} value={c.name}>
+                                {c.name}
+                                <span className="text-xs text-muted-foreground ml-1.5">
+                                  ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
+                                </span>
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+
+              const QtyField = (
+                <FormField
+                  control={form.control}
+                  name={`items.${index}.quantity`}
+                  render={({ field: f }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input type="number" min={1} className="h-9 w-full" {...f} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+
+              const PriceField = (
+                <FormField
+                  control={form.control}
+                  name={`items.${index}.unitPrice`}
+                  render={({ field: f }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            min={0}
+                            className={`h-9 w-full ${isAutoFilled ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : ''}`}
+                            {...f}
+                          />
+                          {isAutoFilled && (
+                            <Wand2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-500 pointer-events-none" />
+                          )}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+
+              const DeleteBtn = fields.length > 1 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => remove(index)}
+                  className="text-destructive h-8 w-8 p-0"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null;
 
               return (
-                <div key={field.id} className="grid grid-cols-12 gap-2 items-start">
-
-                  {/* Service dropdown */}
-                  <div className="col-span-3">
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.serviceId`}
-                      render={({ field: f }) => (
-                        <FormItem>
-                          <Select
-                            value={f.value}
-                            onValueChange={(val) => handleServiceChange(index, val)}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder="Service" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {activeServices.length === 0 ? (
-                                <SelectItem value="__none" disabled>
-                                  No services — add on Services page
-                                </SelectItem>
-                              ) : (
-                                activeServices.map((s) => (
-                                  <SelectItem key={s.id || s._id} value={s.id || s._id}>
-                                    {s.name}
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                <div key={field.id}>
+                  {/* ── Mobile: card layout ────────────────────────────── */}
+                  <div className="md:hidden rounded-lg border p-3 space-y-3 bg-muted/20">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-muted-foreground">Item {index + 1}</span>
+                      {DeleteBtn}
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Service</p>
+                        {ServiceField}
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Item</p>
+                        {ItemField}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Qty</p>
+                          {QtyField}
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                            Unit Price (₦)
+                            {isAutoFilled && <Wand2 className="h-2.5 w-2.5 text-green-500" />}
+                          </p>
+                          {PriceField}
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t">
+                        <span className="text-xs text-muted-foreground">Line total</span>
+                        <span className="text-sm font-semibold">₦{rowTotal.toLocaleString()}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Item dropdown — filtered by selected service */}
-                  <div className="col-span-3">
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.itemType`}
-                      render={({ field: f }) => (
-                        <FormItem>
-                          <Select
-                            value={f.value}
-                            onValueChange={(val) => handleItemChange(index, val)}
-                            disabled={!selectedServiceId}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="h-9">
-                                <SelectValue placeholder={selectedServiceId ? 'Select item' : 'Pick service first'} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {categoriesForService.length === 0 ? (
-                                <SelectItem value="__none" disabled>
-                                  No items for this service
-                                </SelectItem>
-                              ) : (
-                                categoriesForService.map((c) => (
-                                  <SelectItem key={c.id || c._id} value={c.name}>
-                                    {c.name}
-                                    <span className="text-xs text-muted-foreground ml-1.5">
-                                      ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
-                                    </span>
-                                  </SelectItem>
-                                ))
-                              )}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Quantity */}
-                  <div className="col-span-2">
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.quantity`}
-                      render={({ field: f }) => (
-                        <FormItem>
-                          <FormControl>
-                            <Input type="number" min={1} className="h-9" {...f} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Unit price — auto-filled, editable override */}
-                  <div className="col-span-2">
-                    <FormField
-                      control={form.control}
-                      name={`items.${index}.unitPrice`}
-                      render={({ field: f }) => (
-                        <FormItem>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type="number"
-                                min={0}
-                                className={`h-9 ${isAutoFilled ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : ''}`}
-                                {...f}
-                              />
-                              {isAutoFilled && (
-                                <Wand2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-500 pointer-events-none" />
-                              )}
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  {/* Row subtotal */}
-                  <div className="col-span-1 text-sm font-medium text-right pt-2">
-                    ₦{((watchItems[index]?.quantity || 0) * (watchItems[index]?.unitPrice || 0)).toLocaleString()}
-                  </div>
-
-                  {/* Delete */}
-                  <div className="col-span-1 flex justify-center pt-1">
-                    {fields.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove(index)}
-                        className="text-destructive h-8 w-8 p-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
+                  {/* ── Desktop: compact grid row ──────────────────────── */}
+                  <div className="hidden md:grid grid-cols-12 gap-2 items-start">
+                    <div className="col-span-3">{ServiceField}</div>
+                    <div className="col-span-3">{ItemField}</div>
+                    <div className="col-span-2">{QtyField}</div>
+                    <div className="col-span-2">{PriceField}</div>
+                    <div className="col-span-1 text-sm font-medium text-right pt-2">
+                      ₦{rowTotal.toLocaleString()}
+                    </div>
+                    <div className="col-span-1 flex justify-center pt-1">{DeleteBtn}</div>
                   </div>
                 </div>
               );
@@ -572,7 +601,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
           {watchOrderType === 'pickup-delivery' && (
             <>
               <Separator />
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold">Pickup Address</h3>
                   <FormField
@@ -622,7 +651,7 @@ export function CreateOrderModal({ open, onOpenChange }: CreateOrderModalProps) 
           <Separator />
 
           {/* ── Staff & Payment ────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="assignedStaff"

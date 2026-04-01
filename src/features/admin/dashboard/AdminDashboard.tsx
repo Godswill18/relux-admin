@@ -2,7 +2,8 @@
 // ADMIN DASHBOARD - Overview with Analytics Charts
 // ============================================================================
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import apiClient from '@/lib/api/client';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
@@ -143,11 +144,16 @@ export default function AdminDashboard() {
   const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const { fetchServices } = useServiceStore();
+  const [activeOrdersCount, setActiveOrdersCount] = useState<number | null>(null);
 
   useEffect(() => {
     fetchOrders().catch(console.error);
     fetchCustomers().catch(console.error);
     fetchServices().catch(console.error);
+    // Fetch accurate DB count of undelivered orders
+    apiClient.get('/orders/counts')
+      .then((res) => setActiveOrdersCount(res.data?.data?.total ?? null))
+      .catch(() => {});
   }, [fetchOrders, fetchCustomers, fetchServices]);
 
   const safeOrders = Array.isArray(orders) ? orders : [];
@@ -163,13 +169,11 @@ export default function AdminDashboard() {
     [safeOrders]
   );
 
-  const activeOrders = useMemo(
-    () =>
-      safeOrders.filter(
-        (o: any) => !['completed', 'cancelled', 'delivered'].includes(o.status)
-      ).length,
-    [safeOrders]
-  );
+  // Use DB-accurate count if available, fallback to computed
+  const activeOrders = activeOrdersCount ??
+    safeOrders.filter(
+      (o: any) => !['completed', 'cancelled', 'delivered'].includes(o.status)
+    ).length;
 
   const activeCustomers = useMemo(
     () => safeCustomers.filter((c: any) => c.isActive !== false).length,

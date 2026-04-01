@@ -251,6 +251,70 @@ function buildColumns(onEdit: (record: AttendanceRecord) => void): ColumnDef<Att
 }
 
 // ============================================================================
+// ATTENDANCE MOBILE CARD
+// ============================================================================
+
+function AttendanceMobileCard({
+  record,
+  onEdit,
+}: {
+  record: AttendanceRecord;
+  onEdit: (r: AttendanceRecord) => void;
+}) {
+  const name = staffName(record);
+  const role = staffRole(record);
+  const hours = hoursWorked(record);
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusBadge status={record.status} />
+              {record.autoClockOut && (
+                <Badge variant="destructive" className="text-xs">Auto</Badge>
+              )}
+            </div>
+            <div>
+              <p className="font-medium text-sm">{name}</p>
+              <p className="text-xs text-muted-foreground capitalize">{role}</p>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                In:{' '}
+                <span className="text-foreground font-medium">
+                  {record.clockInAt ? format(new Date(record.clockInAt), 'HH:mm') : '—'}
+                </span>
+              </span>
+              <span>
+                Out:{' '}
+                <span className="text-foreground font-medium">
+                  {record.clockOutAt ? format(new Date(record.clockOutAt), 'HH:mm') : (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0">Still In</Badge>
+                  )}
+                </span>
+              </span>
+              <span>
+                Hours: <span className="text-foreground font-medium tabular-nums">{hours}</span>
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 shrink-0"
+            onClick={() => onEdit(record)}
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
 // MAIN PAGE
 // ============================================================================
 
@@ -269,7 +333,6 @@ export default function AdminAttendancePage() {
   // ── Load today's data on mount ──────────────────────────────────────────
   const loadToday = useCallback(() => {
     const today = new Date().toISOString().slice(0, 10);
-    // Pass full-day range so the backend $gte / $lte covers the entire day
     fetchAttendance({
       startDate: `${today}T00:00:00.000Z`,
       endDate:   `${today}T23:59:59.999Z`,
@@ -292,9 +355,7 @@ export default function AdminAttendancePage() {
   }, [activeTab, loadToday, loadHistory]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
-  const todayStr      = new Date().toISOString().slice(0, 10);
   const todayRecords  = records.filter((r) => isTodayUTC(r.clockInAt));
-
   const presentToday  = todayRecords.filter((r) => r.status === 'present').length;
   const lateToday     = todayRecords.filter((r) => r.status === 'late').length;
   const stillIn       = todayRecords.filter((r) => !r.clockOutAt).length;
@@ -313,7 +374,7 @@ export default function AdminAttendancePage() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-9 w-64" />
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
           {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
         </div>
         <Skeleton className="h-96 w-full" />
@@ -322,15 +383,16 @@ export default function AdminAttendancePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* ── Page Header ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Attendance</h1>
-          <p className="text-muted-foreground">Track staff clock-ins, clock-outs, and records</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">Attendance</h1>
+          <p className="text-muted-foreground text-sm">Track staff clock-ins, clock-outs, and records</p>
         </div>
         <Button
           variant="outline"
+          className="w-full sm:w-auto"
           onClick={() => activeTab === 'today' ? loadToday() : loadHistory()}
         >
           <RefreshCw className="mr-2 h-4 w-4" />
@@ -339,11 +401,11 @@ export default function AdminAttendancePage() {
       </div>
 
       {/* ── Summary Stats ────────────────────────────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Present Today</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+            <CheckCircle className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{presentToday}</div>
@@ -354,7 +416,7 @@ export default function AdminAttendancePage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Late Today</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            <AlertTriangle className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{lateToday}</div>
@@ -365,7 +427,7 @@ export default function AdminAttendancePage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Still Clocked In</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stillIn}</div>
@@ -376,7 +438,7 @@ export default function AdminAttendancePage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Auto Clock-outs</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{autoOuts}</div>
@@ -390,27 +452,45 @@ export default function AdminAttendancePage() {
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as 'today' | 'history')}
       >
-        <TabsList>
-          <TabsTrigger value="today">Today</TabsTrigger>
-          <TabsTrigger value="history">History</TabsTrigger>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="today" className="flex-1 sm:flex-none">Today</TabsTrigger>
+          <TabsTrigger value="history" className="flex-1 sm:flex-none">History</TabsTrigger>
         </TabsList>
 
         {/* ── TODAY TAB ───────────────────────────────────────────────────── */}
         <TabsContent value="today">
           <Card>
             <CardHeader>
-              <CardTitle>
+              <CardTitle className="text-base sm:text-lg">
                 Today's Attendance — {format(new Date(), 'EEEE, MMMM dd, yyyy')}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={columns}
-                data={todayRecords}
-                searchKey="staff"
-                searchPlaceholder="Search by staff name…"
-                isLoading={isLoading}
-              />
+            <CardContent className="px-3 sm:px-6">
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {isLoading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+                  ))
+                ) : todayRecords.length === 0 ? (
+                  <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                    <Clock className="h-8 w-8 opacity-30 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No records for today</p>
+                  </CardContent></Card>
+                ) : todayRecords.map((r) => (
+                  <AttendanceMobileCard key={r._id} record={r} onEdit={handleEdit} />
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={columns}
+                  data={todayRecords}
+                  searchKey="staff"
+                  searchPlaceholder="Search by staff name…"
+                  isLoading={isLoading}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -421,14 +501,13 @@ export default function AdminAttendancePage() {
             <CardHeader>
               <CardTitle>Attendance History</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 px-3 sm:px-6">
               {/* Filters */}
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">From</Label>
                   <Input
                     type="date"
-                    className="w-40"
                     value={filterStartDate}
                     onChange={(e) => setFilterStartDate(e.target.value)}
                   />
@@ -437,7 +516,6 @@ export default function AdminAttendancePage() {
                   <Label className="text-xs text-muted-foreground">To</Label>
                   <Input
                     type="date"
-                    className="w-40"
                     value={filterEndDate}
                     onChange={(e) => setFilterEndDate(e.target.value)}
                   />
@@ -445,7 +523,7 @@ export default function AdminAttendancePage() {
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs text-muted-foreground">Status</Label>
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-36">
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -457,19 +535,37 @@ export default function AdminAttendancePage() {
                   </Select>
                 </div>
                 <div className="flex items-end">
-                  <Button onClick={loadHistory} disabled={isLoading}>
+                  <Button onClick={loadHistory} disabled={isLoading} className="w-full">
                     Apply Filters
                   </Button>
                 </div>
               </div>
 
-              <DataTable
-                columns={columns}
-                data={records}
-                searchKey="staff"
-                searchPlaceholder="Search by staff name…"
-                isLoading={isLoading}
-              />
+              {/* Mobile cards */}
+              <div className="md:hidden space-y-3">
+                {isLoading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+                  ))
+                ) : records.length === 0 ? (
+                  <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                    <Clock className="h-8 w-8 opacity-30 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No records found</p>
+                  </CardContent></Card>
+                ) : records.map((r) => (
+                  <AttendanceMobileCard key={r._id} record={r} onEdit={handleEdit} />
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block">
+                <DataTable
+                  columns={columns}
+                  data={records}
+                  searchKey="staff"
+                  searchPlaceholder="Search by staff name…"
+                  isLoading={isLoading}
+                />
+              </div>
 
               {total > records.length && (
                 <p className="text-xs text-muted-foreground text-right">

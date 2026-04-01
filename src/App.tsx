@@ -36,6 +36,7 @@ import SettingsPage from '@/features/admin/settings/SettingsPage';
 import AdminAttendancePage from '@/features/admin/attendance/AdminAttendancePage';
 import StaffDashboard from '@/features/staff/dashboard/StaffDashboard';
 import StaffOrdersPage from '@/features/staff/orders/StaffOrdersPage';
+import StaffDeliveredOrdersPage from '@/features/staff/orders/StaffDeliveredOrdersPage';
 import StaffAttendancePage from '@/features/staff/attendance/StaffAttendancePage';
 import StaffChatPage from '@/features/staff/chat/StaffChatPage';
 import StaffProfilePage from '@/features/staff/profile/StaffProfilePage';
@@ -304,6 +305,22 @@ const App = () => (
               element={
                 <ProtectedRoute requiredPermissions={[Permission.VIEW_ORDERS]}>
                   <StaffOrdersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/delivery-confirm"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.UPDATE_ORDER_STATUS]}>
+                  <DeliveryConfirmPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/delivered"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.VIEW_ORDERS]}>
+                  <StaffDeliveredOrdersPage />
                 </ProtectedRoute>
               }
             />

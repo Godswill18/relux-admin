@@ -8,8 +8,10 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { format } from 'date-fns';
@@ -25,6 +27,7 @@ import {
   MapPin,
   Wifi,
   Store,
+  Receipt,
 } from 'lucide-react';
 
 // ============================================================================
@@ -115,9 +118,10 @@ interface Props {
   order: any | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onViewReceipt?: (order: any) => void;
 }
 
-export function StaffOrderDetailModal({ order, open, onOpenChange }: Props) {
+export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt }: Props) {
   if (!order) return null;
 
   const isWalkIn = order.orderSource === 'offline';
@@ -319,6 +323,15 @@ export function StaffOrderDetailModal({ order, open, onOpenChange }: Props) {
 
           </div>
         </ScrollArea>
+
+        {onViewReceipt && (
+          <DialogFooter className="pt-2">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={() => onViewReceipt(order)}>
+              <Receipt className="mr-2 h-4 w-4" />
+              View Receipt & Barcode
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

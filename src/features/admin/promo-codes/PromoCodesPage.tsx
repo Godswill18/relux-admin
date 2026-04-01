@@ -44,6 +44,16 @@ function isPromoEffectivelyActive(promo: PromoCode): boolean {
   return promo.active && !isPromoExpired(promo);
 }
 
+function PromoStatusBadge({ promo }: { promo: PromoCode }) {
+  const expired = isPromoExpired(promo);
+  if (expired) return <Badge variant="destructive">Expired</Badge>;
+  return (
+    <Badge variant={promo.active ? 'default' : 'secondary'}>
+      {promo.active ? 'Active' : 'Inactive'}
+    </Badge>
+  );
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -149,18 +159,7 @@ export default function PromoCodesPage() {
     {
       accessorKey: 'active',
       header: 'Status',
-      cell: ({ row }) => {
-        const promo = row.original;
-        const expired = isPromoExpired(promo);
-        if (expired) {
-          return <Badge variant="destructive">Expired</Badge>;
-        }
-        return (
-          <Badge variant={promo.active ? 'default' : 'secondary'}>
-            {promo.active ? 'Active' : 'Inactive'}
-          </Badge>
-        );
-      },
+      cell: ({ row }) => <PromoStatusBadge promo={row.original} />,
     },
     {
       id: 'actions',
@@ -212,18 +211,19 @@ export default function PromoCodesPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Page Header */}
       <div>
-        <h1 className="text-3xl font-bold">Promo Codes</h1>
-        <p className="text-muted-foreground">Manage promotional codes and discounts</p>
+        <h1 className="text-2xl sm:text-3xl font-bold">Promo Codes</h1>
+        <p className="text-muted-foreground text-sm">Manage promotional codes and discounts</p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Promo Codes</CardTitle>
-            <Tag className="h-4 w-4 text-muted-foreground" />
+            <Tag className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{activeCodes}</div>
@@ -234,7 +234,7 @@ export default function PromoCodesPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Codes</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCodes}</div>
@@ -242,10 +242,10 @@ export default function PromoCodesPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="col-span-2 md:col-span-1">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Inactive Codes</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{totalCodes - activeCodes}</div>
@@ -256,24 +256,107 @@ export default function PromoCodesPage() {
 
       {/* Table */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4">
           <div>
             <CardTitle>Promo Codes</CardTitle>
             <CardDescription>Create and manage promotional discount codes</CardDescription>
           </div>
-          <Button onClick={() => setIsAddOpen(true)}>
+          <Button onClick={() => setIsAddOpen(true)} className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             Add Code
           </Button>
         </CardHeader>
-        <CardContent>
-          <DataTable
-            columns={columns}
-            data={promoCodes}
-            searchKey="code"
-            searchPlaceholder="Search promo codes..."
-            isLoading={isLoading}
-          />
+        <CardContent className="px-3 sm:px-6">
+          {/* Mobile cards */}
+          <div className="md:hidden space-y-3">
+            {isLoading ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <Card key={i} className="animate-pulse"><CardContent className="p-4 h-20" /></Card>
+              ))
+            ) : promoCodes.length === 0 ? (
+              <Card><CardContent className="flex flex-col items-center gap-2 py-10">
+                <Tag className="h-8 w-8 opacity-30 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">No promo codes found</p>
+              </CardContent></Card>
+            ) : promoCodes.map((promo) => {
+              const expired = isPromoExpired(promo);
+              const expiresDate = promo.expiresAt ? new Date(promo.expiresAt) : null;
+              return (
+                <Card key={promo._id || promo.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-semibold text-sm">{promo.code}</span>
+                          <PromoStatusBadge promo={promo} />
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap text-sm">
+                          <Badge variant="outline" className="text-xs">
+                            {promo.type === 'percent' ? 'Percentage' : 'Fixed'}
+                          </Badge>
+                          <span className="font-medium">
+                            {promo.type === 'percent'
+                              ? `${promo.value}%`
+                              : `₦${(promo.value ?? 0).toLocaleString()}`}
+                          </span>
+                          {promo.usageLimit != null && (
+                            <span className="text-muted-foreground text-xs">
+                              Limit: {promo.usageLimit}
+                            </span>
+                          )}
+                        </div>
+                        {expiresDate ? (
+                          <p className={`text-xs ${expired ? 'text-destructive' : 'text-muted-foreground'}`}>
+                            {expired ? 'Expired: ' : 'Expires: '}
+                            {expiresDate.toLocaleDateString()}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No expiry</p>
+                        )}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" className="h-8 w-8 p-0 shrink-0">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          {expired ? (
+                            <DropdownMenuItem disabled className="text-muted-foreground">
+                              <ToggleLeft className="mr-2 h-4 w-4" />Expired
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onClick={() => handleToggleActive(promo)}>
+                              {promo.active ? (
+                                <><ToggleLeft className="mr-2 h-4 w-4" />Deactivate</>
+                              ) : (
+                                <><ToggleRight className="mr-2 h-4 w-4" />Activate</>
+                              )}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setDeleteTarget(promo)} className="text-destructive">
+                            <Trash className="mr-2 h-4 w-4" />Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {/* Desktop table */}
+          <div className="hidden md:block">
+            <DataTable
+              columns={columns}
+              data={promoCodes}
+              searchKey="code"
+              searchPlaceholder="Search promo codes..."
+              isLoading={isLoading}
+            />
+          </div>
         </CardContent>
       </Card>
 

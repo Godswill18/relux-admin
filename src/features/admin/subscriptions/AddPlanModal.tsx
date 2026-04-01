@@ -1,8 +1,8 @@
 // ============================================================================
-// ADD PLAN MODAL - Create Subscription Plan Form
+// ADD / EDIT PLAN MODAL - Create or update a Subscription Plan
 // ============================================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -18,7 +18,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import { useSubscriptionStore, SubscriptionPlan } from '@/stores/useSubscriptionStore';
 import { toast } from 'sonner';
 import { Loader2, Plus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 // VALIDATION SCHEMA
 // ============================================================================
 
-const addPlanSchema = z.object({
+const planSchema = z.object({
   name: z.string().min(1, 'Plan name is required'),
   description: z.string().min(1, 'Description is required'),
   price: z.coerce.number().min(1, 'Price must be at least 1'),
@@ -35,7 +35,7 @@ const addPlanSchema = z.object({
   itemLimit: z.coerce.number().min(1, 'Item limit must be at least 1'),
 });
 
-type AddPlanForm = z.infer<typeof addPlanSchema>;
+type PlanForm = z.infer<typeof planSchema>;
 
 // ============================================================================
 // COMPONENT
@@ -44,15 +44,18 @@ type AddPlanForm = z.infer<typeof addPlanSchema>;
 interface AddPlanModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  plan?: SubscriptionPlan | null; // when provided → edit mode
 }
 
-export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
-  const { createPlan } = useSubscriptionStore();
+export function AddPlanModal({ open, onOpenChange, plan }: AddPlanModalProps) {
+  const { createPlan, updatePlan } = useSubscriptionStore();
   const [features, setFeatures] = useState<string[]>([]);
   const [featureInput, setFeatureInput] = useState('');
 
-  const form = useForm<AddPlanForm>({
-    resolver: zodResolver(addPlanSchema),
+  const isEditing = !!plan;
+
+  const form = useForm<PlanForm>({
+    resolver: zodResolver(planSchema),
     defaultValues: {
       name: '',
       description: '',
@@ -61,6 +64,23 @@ export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
       itemLimit: 20,
     },
   });
+
+  // Populate form when editing
+  useEffect(() => {
+    if (plan) {
+      form.reset({
+        name: plan.name,
+        description: plan.description,
+        price: plan.price,
+        durationDays: plan.durationDays,
+        itemLimit: plan.itemLimit,
+      });
+      setFeatures(plan.features || []);
+    } else {
+      form.reset({ name: '', description: '', price: 0, durationDays: 30, itemLimit: 20 });
+      setFeatures([]);
+    }
+  }, [plan, form]);
 
   const isSubmitting = form.formState.isSubmitting;
 
@@ -76,18 +96,21 @@ export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
     setFeatures(features.filter((_, i) => i !== index));
   };
 
-  const onSubmit = async (data: AddPlanForm) => {
+  const onSubmit = async (data: PlanForm) => {
     try {
-      await createPlan({
-        ...data,
-        features,
-      } as any);
-      toast.success('Subscription plan created successfully');
+      if (isEditing) {
+        await updatePlan(plan._id || plan.id, { ...data, features });
+        toast.success('Subscription plan updated successfully');
+      } else {
+        await createPlan({ ...data, features } as any);
+        toast.success('Subscription plan created successfully');
+      }
       form.reset();
       setFeatures([]);
+      setFeatureInput('');
       onOpenChange(false);
     } catch {
-      toast.error('Failed to create plan');
+      toast.error(isEditing ? 'Failed to update plan' : 'Failed to create plan');
     }
   };
 
@@ -95,8 +118,12 @@ export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
     <ModalForm
       open={open}
       onOpenChange={onOpenChange}
-      title="Create Subscription Plan"
-      description="Create a new subscription plan that customers can subscribe to"
+      title={isEditing ? 'Edit Subscription Plan' : 'Create Subscription Plan'}
+      description={
+        isEditing
+          ? 'Update this subscription plan'
+          : 'Create a new subscription plan that customers can subscribe to'
+      }
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -133,7 +160,7 @@ export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
             )}
           />
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <FormField
               control={form.control}
               name="price"
@@ -228,7 +255,7 @@ export function AddPlanModal({ open, onOpenChange }: AddPlanModalProps) {
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Create Plan
+              {isEditing ? 'Save Changes' : 'Create Plan'}
             </Button>
           </div>
         </form>
