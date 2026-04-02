@@ -29,11 +29,11 @@ import apiClient from '@/lib/api/client';
 // CONFIG
 // ============================================================================
 
-// Statuses that staff can transition an order to
+// Statuses that staff can manually transition an order to (forward order)
 const STAFF_STATUSES = [
   { value: 'confirmed',         label: 'Confirmed' },
-  { value: 'in_progress',       label: 'In Progress' },
   { value: 'picked-up',         label: 'Picked Up' },
+  { value: 'in_progress',       label: 'In Progress' },
   { value: 'washing',           label: 'Washing' },
   { value: 'ironing',           label: 'Ironing' },
   { value: 'ready',             label: 'Ready for Collection' },

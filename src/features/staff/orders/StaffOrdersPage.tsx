@@ -1,16 +1,18 @@
 // ============================================================================
-// STAFF ORDERS PAGE
-// Tabs: New Orders · My Orders · Online · Walk-in · Completed
-// Badge counts fetched on load + auto-refreshed every 30 s (staff-specific)
+// STAFF ORDERS PAGE — 11-Status Workflow
+// Pending tab = unassigned pool (any staff can pick)
+// All other tabs = staff's own assigned orders at that status
+// Badge counts are staff-specific, fetched on load + every 30s + via socket
 // ============================================================================
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { useNavigate } from 'react-router-dom';
 import {
-  MoreHorizontal, Plus, CheckCircle, Edit, Eye, Archive,
-  Package, User, Search, ClipboardList, Layers, CheckCircle2,
-  ScanLine, Globe, Store,
+  MoreHorizontal, Plus, Edit, Eye, CheckCircle, Search, Package,
+  User, ScanLine, CheckCircle2,
+  Clock, Check, Truck, Settings2, Waves, Zap,
+  PackageCheck, Navigation, Home, XCircle, ArrowRight,
 } from 'lucide-react';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -18,11 +20,8 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -36,9 +35,10 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import apiClient from '@/lib/api/client';
+import socketClient from '@/lib/socket/client';
 
 // ============================================================================
-// HELPERS
+// CONSTANTS
 // ============================================================================
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -48,6 +48,78 @@ const SERVICE_LABELS: Record<string, string> = {
   'dry-clean': 'Dry Clean',
 };
 
+type StatusKey =
+  | 'pending' | 'confirmed' | 'picked-up' | 'in_progress'
+  | 'washing' | 'ironing' | 'ready' | 'out-for-delivery'
+  | 'delivered' | 'completed' | 'cancelled';
+
+// ── Created By Badge ────────────────────────────────────────────────────────
+function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
+  if (source === 'online' && (!role || role === 'customer')) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0 text-[10px] font-medium border border-blue-200 dark:border-blue-800">
+        Online
+      </span>
+    );
+  }
+  if (role === 'admin' || role === 'manager' || role === 'receptionist') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 px-1.5 py-0 text-[10px] font-medium border border-violet-200 dark:border-violet-800">
+        Admin
+      </span>
+    );
+  }
+  if (role === 'staff') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-1.5 py-0 text-[10px] font-medium border border-amber-200 dark:border-amber-800">
+        Staff
+      </span>
+    );
+  }
+  return null;
+}
+
+// Forward-progression map for "Next Step" button
+const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = {
+  'confirmed':        'picked-up',
+  'picked-up':        'in_progress',
+  'in_progress':      'washing',
+  'washing':          'ironing',
+  'ironing':          'ready',
+  'ready':            'out-for-delivery',
+  'out-for-delivery': 'delivered',
+  'delivered':        'completed',
+};
+
+const NEXT_STATUS_LABEL: Partial<Record<StatusKey, string>> = {
+  'confirmed':        'Mark Picked Up',
+  'picked-up':        'Start Processing',
+  'in_progress':      'Start Washing',
+  'washing':          'Start Ironing',
+  'ironing':          'Mark Ready',
+  'ready':            'Send for Delivery',
+  'out-for-delivery': 'Mark Delivered',
+  'delivered':        'Mark Completed',
+};
+
+const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'pending',          label: 'Pending',          icon: <Clock className="h-3.5 w-3.5" /> },
+  { key: 'confirmed',        label: 'Confirmed',        icon: <Check className="h-3.5 w-3.5" /> },
+  { key: 'picked-up',        label: 'Picked Up',        icon: <Truck className="h-3.5 w-3.5" /> },
+  { key: 'in_progress',      label: 'In Progress',      icon: <Settings2 className="h-3.5 w-3.5" /> },
+  { key: 'washing',          label: 'Washing',          icon: <Waves className="h-3.5 w-3.5" /> },
+  { key: 'ironing',          label: 'Ironing',          icon: <Zap className="h-3.5 w-3.5" /> },
+  { key: 'ready',            label: 'Ready',            icon: <PackageCheck className="h-3.5 w-3.5" /> },
+  { key: 'out-for-delivery', label: 'Out for Delivery', icon: <Navigation className="h-3.5 w-3.5" /> },
+  { key: 'delivered',        label: 'Delivered',        icon: <Home className="h-3.5 w-3.5" /> },
+  { key: 'completed',        label: 'Completed',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  { key: 'cancelled',        label: 'Cancelled',        icon: <XCircle className="h-3.5 w-3.5" /> },
+];
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
 function customerName(order: any): string {
   return order.walkInCustomer?.name || order.customer?.name || '—';
 }
@@ -56,107 +128,20 @@ function customerPhone(order: any): string {
 }
 
 // ============================================================================
-// TYPES
-// ============================================================================
-
-type TabKey = 'new' | 'mine' | 'online' | 'walkin' | 'completed';
-
-interface StaffCounts {
-  new: number;
-  mine: number;
-  online: number;
-  walkin: number;
-  completed: number;
-}
-
-// API params per tab
-const TAB_PARAMS: Record<TabKey, Record<string, string>> = {
-  new:       { tab: 'new',     limit: '100' },
-  mine:      { tab: 'mine',    limit: '100' },
-  online:    { assignedStaff: 'me', orderSource: 'online',  excludeCompleted: 'true', limit: '100' },
-  walkin:    { tab: 'offline', limit: '100' },
-  completed: { tab: 'completed', limit: '100' },
-};
-
-// ============================================================================
-// SHARED BASE COLUMNS
-// ============================================================================
-
-function baseColumns(): ColumnDef<any>[] {
-  return [
-    {
-      accessorKey: 'orderNumber',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
-      cell: ({ row }) => (
-        <span className="font-mono font-semibold text-sm">
-          {row.original.orderNumber ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'customer',
-      header: 'Customer',
-      cell: ({ row }) => (
-        <div>
-          <div className="font-medium">{customerName(row.original)}</div>
-          <div className="text-xs text-muted-foreground">{customerPhone(row.original)}</div>
-        </div>
-      ),
-    },
-    {
-      id: 'service',
-      header: 'Service(s)',
-      cell: ({ row }) => {
-        const items: any[] = row.original.items ?? [];
-        const services =
-          items.length > 0
-            ? [...new Set(items.map((i: any) => i.serviceType).filter(Boolean))]
-            : row.original.serviceType
-            ? [row.original.serviceType]
-            : [];
-        if (services.length === 0)
-          return <span className="text-muted-foreground text-xs">—</span>;
-        return (
-          <div className="flex flex-wrap gap-1">
-            {services.map((s: string) => (
-              <Badge key={s} variant="outline" className="capitalize text-xs whitespace-nowrap">
-                {SERVICE_LABELS[s] ?? s.replace(/-/g, ' ')}
-              </Badge>
-            ))}
-          </div>
-        );
-      },
-    },
-    {
-      accessorKey: 'status',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-    },
-    {
-      accessorKey: 'createdAt',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Date" />,
-      cell: ({ row }) =>
-        row.original.createdAt
-          ? format(new Date(row.original.createdAt), 'MMM dd, yyyy')
-          : '—',
-    },
-  ];
-}
-
-// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
 export default function StaffOrdersPage() {
   const { user } = useAuthStore();
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
 
-  const [activeTab, setActiveTab]   = useState<TabKey>('new');
-  const [orders, setOrders]         = useState<any[]>([]);
-  const [counts, setCounts]         = useState<StaffCounts>({ new: 0, mine: 0, online: 0, walkin: 0, completed: 0 });
-  const [isLoading, setIsLoading]   = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [search, setSearch]         = useState('');
+  const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
+  const [orders,       setOrders]       = useState<any[]>([]);
+  const [counts,       setCounts]       = useState<Record<string, number>>({});
+  const [isLoading,    setIsLoading]    = useState(false);
+  const [refreshKey,   setRefreshKey]   = useState(0);
+  const [listKey,      setListKey]      = useState(0);
+  const [search,       setSearch]       = useState('');
 
   // Modals
   const [detailOrder,  setDetailOrder]  = useState<any>(null);
@@ -169,31 +154,61 @@ export default function StaffOrdersPage() {
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  // ── Fetch staff-specific tab counts ────────────────────────────────────────
+  // ── Fetch staff-specific counts ──────────────────────────────────────────
   const fetchCounts = useCallback(() => {
     apiClient.get('/orders/staff-counts')
-      .then((res) => {
-        const d = res.data?.data;
-        if (d) setCounts(d);
-      })
+      .then((res) => { if (res.data?.data) setCounts(res.data.data); })
       .catch(() => {});
   }, []);
 
-  // Fetch counts on mount, on refresh, and auto-refresh every 30 s
   useEffect(() => {
     fetchCounts();
     const interval = setInterval(fetchCounts, 30_000);
     return () => clearInterval(interval);
   }, [fetchCounts, refreshKey]);
 
-  // ── Fetch orders for the active tab ────────────────────────────────────────
+  // Socket: refresh counts on order changes
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = () => fetchCounts();
+    socket.on('order:created',        handler);
+    socket.on('order:assigned',       handler);
+    socket.on('order:status-updated', handler);
+    socket.on('order:updated',        handler);
+    return () => {
+      socket.off('order:created',        handler);
+      socket.off('order:assigned',       handler);
+      socket.off('order:status-updated', handler);
+      socket.off('order:updated',        handler);
+    };
+  }, [fetchCounts]);
+
+  // Socket: refresh list silently
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = () => setListKey((k) => k + 1);
+    socket.on('order:created',        handler);
+    socket.on('order:assigned',       handler);
+    socket.on('order:status-updated', handler);
+    return () => {
+      socket.off('order:created',        handler);
+      socket.off('order:assigned',       handler);
+      socket.off('order:status-updated', handler);
+    };
+  }, []);
+
+  // ── Fetch orders for active tab ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const fetchOrders = async () => {
       setIsLoading(true);
       setSearch('');
       try {
-        const res = await apiClient.get('/orders', { params: TAB_PARAMS[activeTab] });
+        const res = await apiClient.get('/orders', {
+          params: { statusTab: activeTab, limit: '100' },
+        });
         if (!cancelled) {
           const raw = res.data.data;
           setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
@@ -206,9 +221,8 @@ export default function StaffOrdersPage() {
     };
     fetchOrders();
     return () => { cancelled = true; };
-  }, [activeTab, refreshKey]);
+  }, [activeTab, refreshKey, listKey]);
 
-  // ── Filtered list ─────────────────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
     const q = search.toLowerCase().trim();
     if (!q) return orders;
@@ -219,35 +233,98 @@ export default function StaffOrdersPage() {
     });
   }, [orders, search]);
 
-  // ── Stats (current tab + DB counts) ──────────────────────────────────────
-  const stats = useMemo(() => ({
-    total:      counts.mine,                       // my assigned undelivered (DB-accurate)
-    inProgress: orders.filter((o) =>
-      ['in_progress', 'washing', 'ironing', 'confirmed'].includes(o.status)
-    ).length,
-    ready: orders.filter((o) => o.status === 'ready').length,
-  }), [orders, counts.mine]);
+  // ── Stats ────────────────────────────────────────────────────────────────
+  const myTotal   = Object.entries(counts)
+    .filter(([k]) => k !== 'pending' && k !== 'cancelled')
+    .reduce((s, [, v]) => s + v, 0);
+  const inProgress = (counts['washing'] ?? 0) + (counts['ironing'] ?? 0) + (counts['in_progress'] ?? 0);
+  const readyCount = counts['ready'] ?? 0;
 
-  // ── Accept / pick an order ────────────────────────────────────────────────
+  // ── Pick Order ───────────────────────────────────────────────────────────
   const handleConfirmAccept = async () => {
     if (!acceptTarget) return;
     try {
       setIsAccepting(true);
       await apiClient.patch(`/orders/${acceptTarget._id}/accept`);
-      toast.success(`Order ${acceptTarget.orderNumber} accepted`);
+      toast.success(`Order ${acceptTarget.orderNumber} picked — now in Confirmed`);
       setAcceptTarget(null);
       refresh();
-      setActiveTab('mine');
+      setActiveTab('confirmed');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to accept order');
+      toast.error(err?.response?.data?.message || 'Failed to pick order');
     } finally {
       setIsAccepting(false);
     }
   };
 
-  // ── Column definitions ─────────────────────────────────────────────────────
+  // ── Next Step (advance by one status) ───────────────────────────────────
+  const handleNextStep = async (order: any) => {
+    const current = order.status as StatusKey;
+    const next    = NEXT_STATUS[current];
+    if (!next) return;
+    try {
+      await apiClient.patch(`/orders/${order._id}/status`, { status: next });
+      toast.success(`Order moved to ${next.replace(/-/g, ' ')}`);
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update status');
+    }
+  };
 
-  const newOrderColumns: ColumnDef<any>[] = [
+  // ── Columns ──────────────────────────────────────────────────────────────
+
+  // Shared base columns
+  const baseColumns = (): ColumnDef<any>[] => [
+    {
+      accessorKey: 'orderNumber',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
+      cell: ({ row }) => (
+        <span className="font-mono font-semibold text-sm">{row.original.orderNumber ?? '—'}</span>
+      ),
+    },
+    {
+      id: 'customer',
+      header: 'Customer',
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium">{customerName(row.original)}</div>
+          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+            <span className="text-xs text-muted-foreground">{customerPhone(row.original)}</span>
+            <CreatedByBadge role={row.original.createdByRole} source={row.original.orderSource} />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'service',
+      header: 'Service(s)',
+      cell: ({ row }) => {
+        const items: any[] = row.original.items ?? [];
+        const services = items.length > 0
+          ? [...new Set(items.map((i: any) => i.serviceType).filter(Boolean))]
+          : row.original.serviceType ? [row.original.serviceType] : [];
+        if (!services.length) return <span className="text-muted-foreground text-xs">—</span>;
+        return (
+          <div className="flex flex-wrap gap-1">
+            {services.map((s: string) => (
+              <Badge key={s} variant="outline" className="capitalize text-xs">
+                {SERVICE_LABELS[s] ?? s.replace(/-/g, ' ')}
+              </Badge>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'createdAt',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Date" />,
+      cell: ({ row }) =>
+        row.original.createdAt ? format(new Date(row.original.createdAt), 'MMM dd, yyyy') : '—',
+    },
+  ];
+
+  // Pending tab columns — show "Pick Order" button
+  const pendingColumns: ColumnDef<any>[] = [
     ...baseColumns(),
     {
       id: 'actions',
@@ -263,7 +340,8 @@ export default function StaffOrdersPage() {
     },
   ];
 
-  const activeOrderColumns: ColumnDef<any>[] = [
+  // Active-tab columns — show next-step + manual update
+  const activeColumns: ColumnDef<any>[] = [
     ...baseColumns(),
     {
       id: 'total',
@@ -277,91 +355,48 @@ export default function StaffOrdersPage() {
       id: 'payment',
       header: 'Payment',
       cell: ({ row }) => {
-        const status = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
-        return <PaymentStatusBadge status={status} />;
+        const s = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
+        return <PaymentStatusBadge status={s} />;
       },
     },
     {
       id: 'actions',
       cell: ({ row }) => {
-        const order = row.original;
+        const order  = row.original;
+        const next   = NEXT_STATUS[order.status as StatusKey];
+        const label  = NEXT_STATUS_LABEL[order.status as StatusKey];
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
+          <div className="flex items-center gap-1">
+            {next && label && (
+              <Button size="sm" variant="outline" className="text-xs h-7 px-2" onClick={() => handleNextStep(order)}>
+                <ArrowRight className="mr-1 h-3 w-3" />
+                {label}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => setDetailOrder(order)}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusTarget(order)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Update Status
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        );
-      },
-    },
-  ];
-
-  const walkinColumns: ColumnDef<any>[] = [
-    ...baseColumns(),
-    {
-      id: 'total',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Total" />,
-      cell: ({ row }) => {
-        const total = row.original.pricing?.total ?? 0;
-        return <span className="font-medium">₦{Number(total).toLocaleString()}</span>;
-      },
-    },
-    {
-      id: 'payment',
-      header: 'Payment',
-      cell: ({ row }) => {
-        const method = row.original.payment?.method ?? '—';
-        const status = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
-        return (
-          <div>
-            <div className="text-xs capitalize text-muted-foreground">{method}</div>
-            <PaymentStatusBadge status={status} />
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-7 w-7 p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => setDetailOrder(order)}>
+                  <Eye className="mr-2 h-4 w-4" /> View Details
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setStatusTarget(order)}>
+                  <Edit className="mr-2 h-4 w-4" /> Update Status
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       },
     },
-    {
-      id: 'actions',
-      cell: ({ row }) => {
-        const order = row.original;
-        return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => setDetailOrder(order)}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setStatusTarget(order)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Update Status
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        );
-      },
-    },
   ];
 
-  const completedColumns: ColumnDef<any>[] = [
+  // Read-only columns (delivered / completed / cancelled)
+  const readOnlyColumns: ColumnDef<any>[] = [
     ...baseColumns(),
     {
       id: 'total',
@@ -375,84 +410,33 @@ export default function StaffOrdersPage() {
       id: 'payment',
       header: 'Payment',
       cell: ({ row }) => {
-        const status = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
-        return <PaymentStatusBadge status={status} />;
+        const s = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
+        return <PaymentStatusBadge status={s} />;
       },
-    },
-    {
-      id: 'closedAt',
-      header: 'Closed',
-      cell: ({ row }) =>
-        row.original.updatedAt
-          ? format(new Date(row.original.updatedAt), 'MMM dd, yyyy')
-          : '—',
     },
     {
       id: 'actions',
       cell: ({ row }) => (
         <Button variant="ghost" size="sm" onClick={() => setDetailOrder(row.original)}>
-          <Eye className="mr-2 h-4 w-4" />
-          View
+          <Eye className="mr-2 h-4 w-4" /> View
         </Button>
       ),
     },
   ];
 
-  // ── Tab config ─────────────────────────────────────────────────────────────
-
-  const tabs: {
-    key: TabKey;
-    label: string;
-    icon: React.ReactNode;
-    description: string;
-    columns: ColumnDef<any>[];
-  }[] = [
-    {
-      key: 'new',
-      label: 'New Orders',
-      icon: <Package className="h-3.5 w-3.5" />,
-      description: 'Unassigned orders available to pick up',
-      columns: newOrderColumns,
-    },
-    {
-      key: 'mine',
-      label: 'My Orders',
-      icon: <ClipboardList className="h-3.5 w-3.5" />,
-      description: 'Orders currently assigned to you',
-      columns: activeOrderColumns,
-    },
-    {
-      key: 'online',
-      label: 'Online',
-      icon: <Globe className="h-3.5 w-3.5" />,
-      description: 'Your assigned online / app orders',
-      columns: activeOrderColumns,
-    },
-    {
-      key: 'walkin',
-      label: 'Walk-in',
-      icon: <Store className="h-3.5 w-3.5" />,
-      description: 'Walk-in orders you created',
-      columns: walkinColumns,
-    },
-    {
-      key: 'completed',
-      label: 'Completed',
-      icon: <Archive className="h-3.5 w-3.5" />,
-      description: 'Orders you handled that are done',
-      columns: completedColumns,
-    },
-  ];
-
-  const activeTabConfig = tabs.find((t) => t.key === activeTab)!;
+  function columnsForTab(key: StatusKey): ColumnDef<any>[] {
+    if (key === 'pending')                                          return pendingColumns;
+    if (key === 'delivered' || key === 'completed' || key === 'cancelled') return readOnlyColumns;
+    return activeColumns;
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* ── Page Header ──────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Orders</h1>
-          <p className="text-muted-foreground text-sm">Manage and track laundry orders</p>
+          <p className="text-muted-foreground text-sm">Your laundry workflow</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => navigate('/staff/orders/delivered')} className="flex-1 sm:flex-none">
@@ -465,7 +449,7 @@ export default function StaffOrdersPage() {
           </Button>
           <Button onClick={() => setOfflineOpen(true)} className="flex-1 sm:flex-none">
             <Plus className="mr-2 h-4 w-4" />
-            Create Walk-in Order
+            Create Walk-in
           </Button>
         </div>
       </div>
@@ -475,51 +459,48 @@ export default function StaffOrdersPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">My Orders</CardTitle>
-            <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-2xl font-bold">{myTotal}</div>
             <p className="text-xs text-muted-foreground mt-0.5">Assigned to me</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">In Progress</CardTitle>
-            <Layers className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.inProgress}</div>
+            <div className="text-2xl font-bold">{inProgress}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">Ready</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.ready}</div>
+            <div className="text-2xl font-bold">{readyCount}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* ── Tabs ─────────────────────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
-        {/* Scrollable tab strip */}
-        <div className="w-full overflow-x-auto">
-          <TabsList className="flex w-max min-w-full sm:w-auto sm:min-w-0">
-            {tabs.map((tab) => {
-              const badgeCount = counts[tab.key];
+      {/* ── 11-Status Tab Strip ──────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusKey)}>
+        <div className="w-full overflow-x-auto pb-1">
+          <TabsList className="flex w-max gap-0.5">
+            {STATUS_TABS.map((tab) => {
+              const count = counts[tab.key] ?? 0;
               return (
                 <TabsTrigger
                   key={tab.key}
                   value={tab.key}
-                  className="flex-1 sm:flex-none flex items-center gap-1.5 text-xs sm:text-sm whitespace-nowrap"
+                  className="flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5"
                 >
                   {tab.icon}
-                  {tab.label}
-                  {badgeCount > 0 && (
-                    <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold leading-none">
-                      {badgeCount > 99 ? '99+' : badgeCount}
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
+                  {count > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold leading-none">
+                      {count > 99 ? '99+' : count}
                     </span>
                   )}
                 </TabsTrigger>
@@ -528,9 +509,16 @@ export default function StaffOrdersPage() {
           </TabsList>
         </div>
 
-        {tabs.map((tab) => (
-          <TabsContent key={tab.key} value={tab.key} className="space-y-4">
-            {/* ── Search ────────────────────────────────────────────────── */}
+        {STATUS_TABS.map((tab) => (
+          <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
+            {/* ── Context banner for Pending tab ─────────────────────── */}
+            {tab.key === 'pending' && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-800 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-400">
+                These are unassigned orders. Click <strong>Pick Order</strong> to claim one.
+              </div>
+            )}
+
+            {/* ── Search ─────────────────────────────────────────────── */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -541,7 +529,7 @@ export default function StaffOrdersPage() {
               />
             </div>
 
-            {/* ── Mobile Card List ──────────────────────────────────────── */}
+            {/* ── Mobile cards ───────────────────────────────────────── */}
             <div className="md:hidden space-y-3">
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
@@ -549,7 +537,6 @@ export default function StaffOrdersPage() {
                     <CardContent className="p-4 space-y-2">
                       <div className="h-4 bg-muted rounded w-1/3" />
                       <div className="h-3 bg-muted rounded w-1/2" />
-                      <div className="h-3 bg-muted rounded w-2/3" />
                     </CardContent>
                   </Card>
                 ))
@@ -557,35 +544,42 @@ export default function StaffOrdersPage() {
                 <Card>
                   <CardContent className="flex flex-col items-center gap-3 py-12">
                     <Package className="h-10 w-10 text-muted-foreground opacity-40" />
-                    <p className="text-sm text-muted-foreground">No orders found</p>
+                    <p className="text-sm text-muted-foreground">No {tab.label.toLowerCase()} orders</p>
                   </CardContent>
                 </Card>
               ) : (
                 filteredOrders.map((order) => (
-                  <StaffMobileOrderCard
+                  <StaffMobileCard
                     key={order._id}
                     order={order}
                     tabKey={tab.key}
                     onView={() => setDetailOrder(order)}
                     onAccept={() => setAcceptTarget(order)}
                     onUpdateStatus={() => setStatusTarget(order)}
+                    onNextStep={() => handleNextStep(order)}
+                    nextLabel={NEXT_STATUS_LABEL[order.status as StatusKey]}
                   />
                 ))
               )}
             </div>
 
-            {/* ── Desktop Table ─────────────────────────────────────────── */}
+            {/* ── Desktop table ──────────────────────────────────────── */}
             <Card className="hidden md:block">
               <CardHeader>
-                <CardTitle>{tab.label}</CardTitle>
-                <CardDescription>{tab.description}</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  {tab.icon} {tab.label}
+                </CardTitle>
+                <CardDescription>
+                  {tab.key === 'pending'
+                    ? 'Unassigned orders available to claim'
+                    : `Your orders at ${tab.label.toLowerCase()} stage`}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <DataTable
-                  columns={tab.columns}
+                  columns={columnsForTab(tab.key)}
                   data={filteredOrders}
                   searchKey={undefined}
-                  searchPlaceholder="Search by order number or customer name..."
                   isLoading={isLoading}
                   onRowClick={(row) => setDetailOrder(row)}
                   showColumnVisibility
@@ -603,48 +597,44 @@ export default function StaffOrdersPage() {
         onOpenChange={(open) => !open && setDetailOrder(null)}
         onViewReceipt={(order) => { setDetailOrder(null); setReceiptOrder(order); }}
       />
-
       <BarcodeScannerModal
         open={scannerOpen}
         onOpenChange={setScannerOpen}
         confirmPath="/staff/orders/delivery-confirm"
       />
-
       <OrderReceiptModal
         open={!!receiptOrder}
         onOpenChange={(open) => !open && setReceiptOrder(null)}
         order={receiptOrder}
       />
-
       <ConfirmDialog
         open={!!acceptTarget}
         onOpenChange={(open) => !open && setAcceptTarget(null)}
         title="Pick Up Order"
         description={
           <>
-            Assign order{' '}
+            Claim order{' '}
             <span className="font-mono font-semibold">{acceptTarget?.orderNumber}</span> for{' '}
-            <strong>{acceptTarget ? customerName(acceptTarget) : ''}</strong> to yourself?
+            <strong>{acceptTarget ? customerName(acceptTarget) : ''}</strong>?
+            It will move to <strong>Confirmed</strong> and be assigned to you.
           </>
         }
         confirmLabel="Pick Order"
         isLoading={isAccepting}
         onConfirm={handleConfirmAccept}
       />
-
       <UpdateStatusModal
         open={!!statusTarget}
         onOpenChange={(open) => !open && setStatusTarget(null)}
         order={statusTarget}
         onSuccess={refresh}
       />
-
       <CreateOrderModal
         open={offlineOpen}
         onOpenChange={setOfflineOpen}
         onSuccess={() => {
           refresh();
-          setActiveTab('walkin');
+          setActiveTab('confirmed');
         }}
       />
     </div>
@@ -655,48 +645,35 @@ export default function StaffOrdersPage() {
 // STAFF MOBILE ORDER CARD
 // ============================================================================
 
-interface StaffMobileOrderCardProps {
+interface StaffMobileCardProps {
   order: any;
-  tabKey: TabKey;
+  tabKey: StatusKey;
   onView: () => void;
   onAccept: () => void;
   onUpdateStatus: () => void;
+  onNextStep: () => void;
+  nextLabel?: string;
 }
 
-function StaffMobileOrderCard({
-  order,
-  tabKey,
-  onView,
-  onAccept,
-  onUpdateStatus,
-}: StaffMobileOrderCardProps) {
-  const isWalkIn = order.orderSource === 'offline';
-  const name = customerName(order);
+function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNextStep, nextLabel }: StaffMobileCardProps) {
+  const isWalkIn     = order.orderSource === 'offline';
+  const name         = customerName(order);
   const items: any[] = order.items ?? [];
-  const total = order.pricing?.total ?? order.total ?? 0;
-  const paymentStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-  const createdAt = order.createdAt
-    ? format(new Date(order.createdAt), 'MMM dd, yyyy')
-    : '—';
+  const total        = order.pricing?.total ?? order.total ?? 0;
+  const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
+  const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
+  const isReadOnly   = tabKey === 'delivered' || tabKey === 'completed' || tabKey === 'cancelled';
 
   return (
-    <Card
-      className="cursor-pointer hover:bg-muted/30 transition-colors"
-      onClick={onView}
-    >
+    <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={onView}>
       <CardContent className="p-4 space-y-3">
-        {/* Top row: order number + actions menu */}
+        {/* Top: order number + actions */}
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm font-mono">
-                {order.orderNumber ?? '—'}
-              </span>
-              {isWalkIn && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                  Walk-in
-                </Badge>
-              )}
+              <span className="font-semibold text-sm font-mono">{order.orderNumber ?? '—'}</span>
+              {isWalkIn && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Walk-in</Badge>}
+              <CreatedByBadge role={order.createdByRole} source={order.orderSource} />
             </div>
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <User className="h-3.5 w-3.5 shrink-0" />
@@ -706,30 +683,23 @@ function StaffMobileOrderCard({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="h-8 w-8 p-0 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
+              <Button variant="ghost" className="h-8 w-8 p-0 shrink-0" onClick={(e) => e.stopPropagation()}>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(); }}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
+                <Eye className="mr-2 h-4 w-4" /> View Details
               </DropdownMenuItem>
-              {tabKey === 'new' && (
+              {tabKey === 'pending' && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAccept(); }}>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Pick Order
+                  <CheckCircle className="mr-2 h-4 w-4" /> Pick Order
                 </DropdownMenuItem>
               )}
-              {(tabKey === 'mine' || tabKey === 'online' || tabKey === 'walkin') && (
+              {!isReadOnly && tabKey !== 'pending' && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onUpdateStatus(); }}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Update Status
+                  <Edit className="mr-2 h-4 w-4" /> Update Status
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -747,31 +717,29 @@ function StaffMobileOrderCard({
           </div>
         )}
 
-        {/* Bottom row: status + payment + total + date */}
+        {/* Status + payment + amount */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <OrderStatusBadge status={order.status} />
-            {(tabKey === 'mine' || tabKey === 'online' || tabKey === 'walkin' || tabKey === 'completed') && (
-              <PaymentStatusBadge status={paymentStatus} />
-            )}
+            {tabKey !== 'pending' && <PaymentStatusBadge status={payStatus} />}
           </div>
           <div className="text-right">
-            {total > 0 && (
-              <div className="font-semibold text-sm">₦{Number(total).toLocaleString()}</div>
-            )}
+            {total > 0 && <div className="font-semibold text-sm">₦{Number(total).toLocaleString()}</div>}
             <div className="text-[11px] text-muted-foreground">{createdAt}</div>
           </div>
         </div>
 
-        {/* Pick Order button for new-orders tab */}
-        {tabKey === 'new' && (
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={(e) => { e.stopPropagation(); onAccept(); }}
-          >
-            <CheckCircle className="mr-2 h-4 w-4" />
-            Pick Order
+        {/* Pending: Pick Order button */}
+        {tabKey === 'pending' && (
+          <Button size="sm" className="w-full" onClick={(e) => { e.stopPropagation(); onAccept(); }}>
+            <CheckCircle className="mr-2 h-4 w-4" /> Pick Order
+          </Button>
+        )}
+
+        {/* Active: Next Step button */}
+        {!isReadOnly && tabKey !== 'pending' && nextLabel && (
+          <Button size="sm" variant="outline" className="w-full" onClick={(e) => { e.stopPropagation(); onNextStep(); }}>
+            <ArrowRight className="mr-2 h-4 w-4" /> {nextLabel}
           </Button>
         )}
       </CardContent>

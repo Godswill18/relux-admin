@@ -1,5 +1,7 @@
 // ============================================================================
-// ORDERS PAGE - Tabbed Order Management with Accurate DB Counts
+// ADMIN ORDERS PAGE — 11-Status Workflow
+// Tabs: Pending · Confirmed · Picked Up · In Progress · Washing · Ironing ·
+//       Ready · Out for Delivery · Delivered · Completed · Cancelled
 // ============================================================================
 
 import { useCallback, useEffect, useState, useMemo } from 'react';
@@ -7,7 +9,9 @@ import { useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine,
-  CheckCircle2, Search, Package, User, Globe, Store, Archive,
+  CheckCircle2, Search, Package, User,
+  Clock, Check, Truck, Settings2, Waves, Zap,
+  PackageCheck, Navigation, Home, XCircle,
 } from 'lucide-react';
 import { CreateOrderModal } from './CreateOrderModal';
 import { EditOrderModal } from './EditOrderModal';
@@ -21,12 +25,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useHasPermission } from '@/stores/useAuthStore';
@@ -34,30 +34,37 @@ import { Permission } from '@/types';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import apiClient from '@/lib/api/client';
+import socketClient from '@/lib/socket/client';
 
 // ============================================================================
-// TYPES
+// CONSTANTS
 // ============================================================================
 
-type TabKey = 'all' | 'online' | 'walkin' | 'completed';
+type StatusKey =
+  | 'pending' | 'confirmed' | 'picked-up' | 'in_progress'
+  | 'washing' | 'ironing' | 'ready' | 'out-for-delivery'
+  | 'delivered' | 'completed' | 'cancelled';
 
-interface OrderCounts {
-  total: number;
-  online: number;
-  walkin: number;
-  completed: number;
-}
-
-// Query params per tab
-const TAB_PARAMS: Record<TabKey, Record<string, string>> = {
-  all:       { excludeCompleted: 'true', limit: '100' },
-  online:    { orderSource: 'online',  excludeCompleted: 'true', limit: '100' },
-  walkin:    { orderSource: 'offline', excludeCompleted: 'true', limit: '100' },
-  completed: { doneOnly: 'true', limit: '100' },
-};
+const STATUS_TABS: {
+  key: StatusKey;
+  label: string;
+  icon: React.ReactNode;
+}[] = [
+  { key: 'pending',          label: 'Pending',          icon: <Clock className="h-3.5 w-3.5" /> },
+  { key: 'confirmed',        label: 'Confirmed',        icon: <Check className="h-3.5 w-3.5" /> },
+  { key: 'picked-up',        label: 'Picked Up',        icon: <Truck className="h-3.5 w-3.5" /> },
+  { key: 'in_progress',      label: 'In-Progress',      icon: <Settings2 className="h-3.5 w-3.5" /> },
+  { key: 'washing',          label: 'Washing',          icon: <Waves className="h-3.5 w-3.5" /> },
+  { key: 'ironing',          label: 'Ironing',          icon: <Zap className="h-3.5 w-3.5" /> },
+  { key: 'ready',            label: 'Ready',            icon: <PackageCheck className="h-3.5 w-3.5" /> },
+  { key: 'out-for-delivery', label: 'Out for Delivery', icon: <Navigation className="h-3.5 w-3.5" /> },
+  { key: 'delivered',        label: 'Delivered',        icon: <Home className="h-3.5 w-3.5" /> },
+  { key: 'completed',        label: 'Completed',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  { key: 'cancelled',        label: 'Cancelled',        icon: <XCircle className="h-3.5 w-3.5" /> },
+];
 
 // ============================================================================
-// ORDERS PAGE COMPONENT
+// COMPONENT
 // ============================================================================
 
 export default function OrdersPage() {
@@ -67,41 +74,79 @@ export default function OrdersPage() {
   const canAssign = useHasPermission(Permission.ASSIGN_STAFF);
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
 
-  const [activeTab, setActiveTab]       = useState<TabKey>('all');
-  const [orders, setOrders]             = useState<any[]>([]);
-  const [counts, setCounts]             = useState<OrderCounts>({ total: 0, online: 0, walkin: 0, completed: 0 });
-  const [isLoading, setIsLoading]       = useState(false);
-  const [refreshKey, setRefreshKey]     = useState(0);
-  const [search, setSearch]             = useState('');
+  const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
+  const [orders,       setOrders]       = useState<any[]>([]);
+  const [counts,       setCounts]       = useState<Record<string, number>>({});
+  const [isLoading,    setIsLoading]    = useState(false);
+  const [refreshKey,   setRefreshKey]   = useState(0);
+  const [listKey,      setListKey]      = useState(0);
+  const [search,       setSearch]       = useState('');
 
   // Modals
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editTarget,   setEditTarget]   = useState<any>(null);
   const [assignTarget, setAssignTarget] = useState<any>(null);
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerOpen,  setScannerOpen]  = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [isDeleting,   setIsDeleting]   = useState(false);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  // Fetch DB counts (independent of pagination)
-  useEffect(() => {
+  // ── Fetch DB counts per status ───────────────────────────────────────────
+  const fetchCounts = useCallback(() => {
     apiClient.get('/orders/counts')
-      .then((res) => {
-        const d = res.data?.data;
-        if (d) setCounts(d);
-      })
+      .then((res) => { if (res.data?.data) setCounts(res.data.data); })
       .catch(() => {});
-  }, [refreshKey]);
+  }, []);
 
-  // Fetch orders for the active tab
+  useEffect(() => {
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchCounts, refreshKey]);
+
+  // Socket: update counts instantly on order changes
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = () => fetchCounts();
+    socket.on('order:created',        handler);
+    socket.on('order:assigned',       handler);
+    socket.on('order:status-updated', handler);
+    socket.on('order:updated',        handler);
+    return () => {
+      socket.off('order:created',        handler);
+      socket.off('order:assigned',       handler);
+      socket.off('order:status-updated', handler);
+      socket.off('order:updated',        handler);
+    };
+  }, [fetchCounts]);
+
+  // Socket: refresh list when order changes in active tab
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = () => setListKey((k) => k + 1);
+    socket.on('order:created',        handler);
+    socket.on('order:assigned',       handler);
+    socket.on('order:status-updated', handler);
+    return () => {
+      socket.off('order:created',        handler);
+      socket.off('order:assigned',       handler);
+      socket.off('order:status-updated', handler);
+    };
+  }, []);
+
+  // ── Fetch orders for active tab ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const fetch = async () => {
       setIsLoading(true);
       setSearch('');
       try {
-        const res = await apiClient.get('/orders', { params: TAB_PARAMS[activeTab] });
+        const res = await apiClient.get('/orders', {
+          params: { statusTab: activeTab, limit: '100' },
+        });
         if (!cancelled) {
           const raw = res.data?.data;
           setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
@@ -114,7 +159,7 @@ export default function OrdersPage() {
     };
     fetch();
     return () => { cancelled = true; };
-  }, [activeTab, refreshKey]);
+  }, [activeTab, refreshKey, listKey]);
 
   const filteredOrders = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -126,12 +171,22 @@ export default function OrdersPage() {
     });
   }, [orders, search]);
 
+  const handleMarkCompleted = async (order: any) => {
+    try {
+      await apiClient.patch(`/orders/${order._id}/status`, { status: 'completed' });
+      toast.success(`Order ${order.orderNumber} marked as Completed`);
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update status');
+    }
+  };
+
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     try {
       setIsDeleting(true);
       await apiClient.delete(`/orders/${deleteTarget._id || deleteTarget.id}`);
-      toast.success('Order deleted successfully');
+      toast.success('Order deleted');
       setDeleteTarget(null);
       refresh();
     } catch {
@@ -142,13 +197,12 @@ export default function OrdersPage() {
   };
 
   // ── Table columns ────────────────────────────────────────────────────────
-
   const columns: ColumnDef<any>[] = [
     {
       accessorKey: 'orderNumber',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
       cell: ({ row }) => (
-        <div className="font-medium">{row.original.orderNumber || row.original.code || '—'}</div>
+        <div className="font-medium font-mono">{row.original.orderNumber || '—'}</div>
       ),
     },
     {
@@ -156,7 +210,13 @@ export default function OrdersPage() {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Customer" />,
       cell: ({ row }) => (
         <div className="text-sm">
-          {row.original.customer?.name || row.original.walkInCustomer?.name || '—'}
+          <div>{row.original.customer?.name || row.original.walkInCustomer?.name || '—'}</div>
+          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+            <span className="text-xs text-muted-foreground">
+              {row.original.orderSource === 'offline' ? 'Walk-in' : 'Online'}
+            </span>
+            <CreatedByBadge role={row.original.createdByRole} source={row.original.orderSource} />
+          </div>
         </div>
       ),
     },
@@ -165,10 +225,9 @@ export default function OrdersPage() {
       header: 'Items',
       cell: ({ row }) => {
         const items = row.original.items || [];
-        const firstItem = items[0];
         return (
           <div className="text-sm">
-            <div>{firstItem?.itemType || firstItem?.serviceName || '—'}</div>
+            <div>{items[0]?.itemType || items[0]?.serviceName || '—'}</div>
             {items.length > 1 && (
               <div className="text-xs text-muted-foreground">+{items.length - 1} more</div>
             )}
@@ -185,16 +244,11 @@ export default function OrdersPage() {
       },
     },
     {
-      accessorKey: 'status',
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
-      cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-    },
-    {
       id: 'payment',
       header: 'Payment',
       cell: ({ row }) => {
-        const paymentStatus = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
-        return <PaymentStatusBadge status={paymentStatus} />;
+        const ps = row.original.paymentStatus || row.original.payment?.status || 'unpaid';
+        return <PaymentStatusBadge status={ps} />;
       },
     },
     {
@@ -203,7 +257,7 @@ export default function OrdersPage() {
       cell: ({ row }) => (
         <div className="text-sm">
           {row.original.assignedStaff?.name || (
-            <span className="text-muted-foreground">Unassigned</span>
+            <span className="text-muted-foreground italic">Unassigned</span>
           )}
         </div>
       ),
@@ -222,191 +276,155 @@ export default function OrdersPage() {
       cell: ({ row }) => {
         const order = row.original;
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">Open menu</span>
-                <MoreHorizontal className="h-4 w-4" />
+          <div className="flex items-center gap-1">
+            {activeTab === 'delivered' && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs text-green-700 border-green-300 hover:bg-green-50 dark:text-green-400 dark:border-green-800 dark:hover:bg-green-900/20"
+                onClick={() => handleMarkCompleted(order)}
+              >
+                <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+                Mark Completed
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => navigate(`/admin/orders/${order._id}`)}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
-              </DropdownMenuItem>
-              {canEdit && (
-                <DropdownMenuItem onClick={() => setEditTarget(order)}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Edit Order
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="h-8 w-8 p-0">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => navigate(`/admin/orders/${order._id}`)}>
+                  <Eye className="mr-2 h-4 w-4" /> View Details
                 </DropdownMenuItem>
-              )}
-              {canAssign && (
-                <DropdownMenuItem onClick={() => setAssignTarget(order)}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Assign Staff
-                </DropdownMenuItem>
-              )}
-              {canDelete && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setDeleteTarget(order)}
-                    className="text-destructive"
-                  >
-                    <Trash className="mr-2 h-4 w-4" />
-                    Delete
+                {canEdit && (
+                  <DropdownMenuItem onClick={() => setEditTarget(order)}>
+                    <Edit className="mr-2 h-4 w-4" /> Edit Order
                   </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                )}
+                {canAssign && (
+                  <DropdownMenuItem onClick={() => setAssignTarget(order)}>
+                    <UserPlus className="mr-2 h-4 w-4" /> Assign Staff
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(order)}>
+                      <Trash className="mr-2 h-4 w-4" /> Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         );
       },
     },
   ];
 
-  // ── Tab config ────────────────────────────────────────────────────────────
-
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode; count: number }[] = [
-    { key: 'all',       label: 'All Orders',   icon: <Package className="h-3.5 w-3.5" />,      count: counts.total },
-    { key: 'online',    label: 'Online',        icon: <Globe className="h-3.5 w-3.5" />,         count: counts.online },
-    { key: 'walkin',    label: 'Walk-in',       icon: <Store className="h-3.5 w-3.5" />,         count: counts.walkin },
-    { key: 'completed', label: 'Completed',     icon: <CheckCircle2 className="h-3.5 w-3.5" />,  count: counts.completed },
-  ];
+  // Summary stats derived from counts
+  const activeCount    = (counts.active ?? 0);
+  const pendingCount   = (counts.pending ?? 0);
+  const inWorkCount    = (['washing','ironing','in_progress','confirmed','picked-up'] as StatusKey[])
+    .reduce((s, k) => s + (counts[k] ?? 0), 0);
+  const deliveredCount = (counts.delivered ?? 0) + (counts.completed ?? 0);
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Orders</h1>
-          <p className="text-muted-foreground text-sm">Manage all laundry orders</p>
+          <p className="text-muted-foreground text-sm">11-stage laundry workflow</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => navigate('/admin/orders/delivered')}>
-            <CheckCircle2 className="mr-2 h-4 w-4" />
-            Delivered
-          </Button>
-          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setIsScannerOpen(true)}>
-            <ScanLine className="mr-2 h-4 w-4" />
-            Scan
+          <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setScannerOpen(true)}>
+            <ScanLine className="mr-2 h-4 w-4" /> Scan
           </Button>
           {canCreate && (
-            <Button size="sm" className="flex-1 sm:flex-none" onClick={() => setIsCreateModalOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Order
+            <Button size="sm" className="flex-1 sm:flex-none" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Create Order
             </Button>
           )}
         </div>
       </div>
 
-      {/* ── Modals ──────────────────────────────────────────────────────────── */}
-      <CreateOrderModal open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen} onSuccess={refresh} />
+      {/* ── Modals ──────────────────────────────────────────────────────── */}
+      <CreateOrderModal open={isCreateOpen} onOpenChange={setIsCreateOpen} onSuccess={refresh} />
       <EditOrderModal
         open={!!editTarget}
-        onOpenChange={(open) => !open && setEditTarget(null)}
+        onOpenChange={(o) => !o && setEditTarget(null)}
         order={editTarget}
       />
       <AssignStaffModal
         open={!!assignTarget}
-        onOpenChange={(open) => !open && setAssignTarget(null)}
+        onOpenChange={(o) => !o && setAssignTarget(null)}
         order={assignTarget}
       />
-      <BarcodeScannerModal open={isScannerOpen} onOpenChange={setIsScannerOpen} />
+      <BarcodeScannerModal open={scannerOpen} onOpenChange={setScannerOpen} />
       <ConfirmDialog
         open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
         title="Delete Order"
-        description={
-          <>
-            Are you sure you want to delete order{' '}
-            <strong>{deleteTarget?.orderNumber || deleteTarget?.code}</strong>? This action cannot be undone.
-          </>
-        }
+        description={<>Delete order <strong>{deleteTarget?.orderNumber}</strong>? This cannot be undone.</>}
         confirmLabel="Delete"
         destructive
         isLoading={isDeleting}
         onConfirm={handleConfirmDelete}
       />
 
-      {/* ── Stats Cards (DB-accurate counts) ───────────────────────────────── */}
+      {/* ── Summary Stats ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card
-          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'all' ? 'ring-2 ring-primary' : ''}`}
-          onClick={() => setActiveTab('all')}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Total Orders</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{counts.total}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Undelivered</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'online' ? 'ring-2 ring-primary' : ''}`}
-          onClick={() => setActiveTab('online')}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Online Orders</CardTitle>
-            <Globe className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{counts.online}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Via app / website</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'walkin' ? 'ring-2 ring-primary' : ''}`}
-          onClick={() => setActiveTab('walkin')}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Walk-in Orders</CardTitle>
-            <Store className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{counts.walkin}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">In-store / offline</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={`cursor-pointer transition-colors hover:bg-muted/30 ${activeTab === 'completed' ? 'ring-2 ring-primary' : ''}`}
-          onClick={() => setActiveTab('completed')}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Completed</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{counts.completed}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Delivered / closed</p>
-          </CardContent>
-        </Card>
+        {[
+          { label: 'Active Orders',  value: activeCount,    desc: 'Not delivered/cancelled' },
+          { label: 'Pending',        value: pendingCount,   desc: 'Awaiting staff pickup' },
+          { label: 'In Workflow',    value: inWorkCount,    desc: 'Being processed' },
+          { label: 'Delivered',      value: deliveredCount, desc: 'Done & completed' },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardHeader className="pb-1 pt-4 px-4">
+              <CardTitle className="text-xs sm:text-sm font-medium">{s.label}</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="text-2xl font-bold">{s.value}</div>
+              <p className="text-xs text-muted-foreground mt-0.5">{s.desc}</p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {/* ── Tabs ─────────────────────────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
-        <div className="w-full overflow-x-auto">
-          <TabsList className="flex w-max min-w-full sm:w-auto sm:min-w-0">
-            {tabs.map((tab) => (
-              <TabsTrigger
-                key={tab.key}
-                value={tab.key}
-                className="flex-1 sm:flex-none flex items-center gap-1.5 text-xs sm:text-sm whitespace-nowrap"
-              >
-                {tab.icon}
-                {tab.label}
-                <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-4">
-                  {tab.count}
-                </Badge>
-              </TabsTrigger>
-            ))}
+      {/* ── 11-Status Tab Strip ─────────────────────────────────────────── */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusKey)}>
+        <div className="w-full overflow-x-auto pb-1">
+          <TabsList className="flex w-max gap-0.5">
+            {STATUS_TABS.map((tab) => {
+              const count = counts[tab.key] ?? 0;
+              return (
+                <TabsTrigger
+                  key={tab.key}
+                  value={tab.key}
+                  className="flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5"
+                >
+                  {tab.icon}
+                  <span className="hidden sm:inline">{tab.label}</span>
+                  <span className="sm:hidden">
+                    {tab.label.split(' ')[0]}
+                  </span>
+                  {count > 0 && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold leading-none">
+                      {count > 99 ? '99+' : count}
+                    </span>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
         </div>
 
-        {tabs.map((tab) => (
+        {STATUS_TABS.map((tab) => (
           <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
             {/* Search */}
             <div className="relative">
@@ -419,7 +437,7 @@ export default function OrdersPage() {
               />
             </div>
 
-            {/* Mobile Card List */}
+            {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
@@ -427,7 +445,6 @@ export default function OrdersPage() {
                     <CardContent className="p-4 space-y-2">
                       <div className="h-4 bg-muted rounded w-1/3" />
                       <div className="h-3 bg-muted rounded w-1/2" />
-                      <div className="h-3 bg-muted rounded w-2/3" />
                     </CardContent>
                   </Card>
                 ))
@@ -435,35 +452,36 @@ export default function OrdersPage() {
                 <Card>
                   <CardContent className="flex flex-col items-center gap-3 py-12">
                     <Package className="h-10 w-10 text-muted-foreground opacity-40" />
-                    <p className="text-sm text-muted-foreground">No orders found</p>
+                    <p className="text-sm text-muted-foreground">No {tab.label.toLowerCase()} orders</p>
                   </CardContent>
                 </Card>
               ) : (
                 filteredOrders.map((order) => (
-                  <MobileOrderCard
+                  <AdminMobileCard
                     key={order._id}
                     order={order}
                     canEdit={canEdit}
                     canAssign={canAssign}
                     canDelete={canDelete}
+                    showComplete={tab.key === 'delivered'}
                     onView={() => navigate(`/admin/orders/${order._id}`)}
                     onEdit={() => setEditTarget(order)}
                     onAssign={() => setAssignTarget(order)}
                     onDelete={() => setDeleteTarget(order)}
+                    onMarkCompleted={() => handleMarkCompleted(order)}
                   />
                 ))
               )}
             </div>
 
-            {/* Desktop Table */}
+            {/* Desktop table */}
             <Card className="hidden md:block">
               <CardHeader>
-                <CardTitle>{tab.label}</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  {tab.icon} {tab.label}
+                </CardTitle>
                 <CardDescription>
-                  {tab.key === 'all'       && 'All active undelivered orders'}
-                  {tab.key === 'online'    && 'Orders placed via app or website'}
-                  {tab.key === 'walkin'    && 'Walk-in orders created in-store'}
-                  {tab.key === 'completed' && 'Delivered and completed orders'}
+                  {filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -471,9 +489,8 @@ export default function OrdersPage() {
                   columns={columns}
                   data={filteredOrders}
                   searchKey={undefined}
-                  searchPlaceholder="Search by order number or customer name..."
                   isLoading={isLoading}
-                  onRowClick={(order: any) => navigate(`/admin/orders/${order._id}`)}
+                  onRowClick={(o: any) => navigate(`/admin/orders/${o._id}`)}
                   showColumnVisibility
                 />
               </CardContent>
@@ -486,36 +503,24 @@ export default function OrdersPage() {
 }
 
 // ============================================================================
-// MOBILE ORDER CARD
+// MOBILE CARD
 // ============================================================================
 
-interface MobileOrderCardProps {
+interface AdminMobileCardProps {
   order: any;
-  canEdit: boolean;
-  canAssign: boolean;
-  canDelete: boolean;
-  onView: () => void;
-  onEdit: () => void;
-  onAssign: () => void;
-  onDelete: () => void;
+  canEdit: boolean; canAssign: boolean; canDelete: boolean;
+  showComplete?: boolean;
+  onView: () => void; onEdit: () => void; onAssign: () => void; onDelete: () => void;
+  onMarkCompleted?: () => void;
 }
 
-function MobileOrderCard({
-  order,
-  canEdit,
-  canAssign,
-  canDelete,
-  onView,
-  onEdit,
-  onAssign,
-  onDelete,
-}: MobileOrderCardProps) {
-  const isWalkIn = order.orderSource === 'offline';
+function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, onView, onEdit, onAssign, onDelete, onMarkCompleted }: AdminMobileCardProps) {
+  const isWalkIn     = order.orderSource === 'offline';
   const customerName = order.customer?.name || order.walkInCustomer?.name || '—';
   const items: any[] = order.items || [];
-  const total = order.pricing?.total || order.total || 0;
-  const paymentStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-  const createdAt = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
+  const total        = order.pricing?.total || order.total || 0;
+  const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
+  const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
 
   return (
     <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={onView}>
@@ -523,10 +528,9 @@ function MobileOrderCard({
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-sm">{order.orderNumber || '—'}</span>
-              {isWalkIn && (
-                <Badge variant="outline" className="text-[10px] px-1.5 py-0">Walk-in</Badge>
-              )}
+              <span className="font-semibold text-sm font-mono">{order.orderNumber || '—'}</span>
+              {isWalkIn && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Walk-in</Badge>}
+              <CreatedByBadge role={order.createdByRole} source={order.orderSource} />
             </div>
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <User className="h-3.5 w-3.5 shrink-0" />
@@ -541,27 +545,23 @@ function MobileOrderCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onView(); }}>
-                <Eye className="mr-2 h-4 w-4" />
-                View Details
+                <Eye className="mr-2 h-4 w-4" /> View Details
               </DropdownMenuItem>
               {canEdit && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(); }}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Edit Order
+                  <Edit className="mr-2 h-4 w-4" /> Edit
                 </DropdownMenuItem>
               )}
               {canAssign && (
                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAssign(); }}>
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Assign Staff
+                  <UserPlus className="mr-2 h-4 w-4" /> Assign Staff
                 </DropdownMenuItem>
               )}
               {canDelete && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem className="text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
-                    <Trash className="mr-2 h-4 w-4" />
-                    Delete
+                    <Trash className="mr-2 h-4 w-4" /> Delete
                   </DropdownMenuItem>
                 </>
               )}
@@ -582,14 +582,54 @@ function MobileOrderCard({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <OrderStatusBadge status={order.status} />
-            <PaymentStatusBadge status={paymentStatus} />
+            <PaymentStatusBadge status={payStatus} />
           </div>
           <div className="text-right">
             <div className="font-semibold text-sm">₦{total.toLocaleString()}</div>
             <div className="text-[11px] text-muted-foreground">{createdAt}</div>
           </div>
         </div>
+
+        {showComplete && (
+          <Button
+            size="sm"
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+            onClick={(e) => { e.stopPropagation(); onMarkCompleted?.(); }}
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Mark as Completed
+          </Button>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+// ============================================================================
+// CREATED BY BADGE — shows who originated the order
+// ============================================================================
+
+function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
+  if (source === 'online' && (!role || role === 'customer')) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 px-1.5 py-0 text-[10px] font-medium border border-blue-200 dark:border-blue-800">
+        Online
+      </span>
+    );
+  }
+  if (role === 'admin' || role === 'manager' || role === 'receptionist') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 px-1.5 py-0 text-[10px] font-medium border border-violet-200 dark:border-violet-800">
+        Admin
+      </span>
+    );
+  }
+  if (role === 'staff') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-1.5 py-0 text-[10px] font-medium border border-amber-200 dark:border-amber-800">
+        Staff
+      </span>
+    );
+  }
+  return null;
 }

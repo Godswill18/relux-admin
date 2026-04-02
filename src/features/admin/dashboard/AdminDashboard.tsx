@@ -150,9 +150,9 @@ export default function AdminDashboard() {
     fetchOrders().catch(console.error);
     fetchCustomers().catch(console.error);
     fetchServices().catch(console.error);
-    // Fetch accurate DB count of undelivered orders
+    // Fetch accurate DB count of active (non-delivered/cancelled) orders
     apiClient.get('/orders/counts')
-      .then((res) => setActiveOrdersCount(res.data?.data?.total ?? null))
+      .then((res) => setActiveOrdersCount(res.data?.data?.active ?? res.data?.data?.total ?? null))
       .catch(() => {});
   }, [fetchOrders, fetchCustomers, fetchServices]);
 
