@@ -30,6 +30,7 @@ import { Loader2 } from 'lucide-react';
 const editTierSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   pointsRequired: z.coerce.number().min(0, 'Points must be 0 or more'),
+  minSpend: z.coerce.number().min(0, 'Min spend must be 0 or more').default(0),
   multiplierPercent: z.coerce.number().min(100, 'Multiplier must be at least 100%'),
   rank: z.coerce.number().min(1, 'Rank must be at least 1'),
   freePickup: z.boolean().default(false),
@@ -57,6 +58,7 @@ export function EditTierModal({ open, onOpenChange, tier }: EditTierModalProps) 
     defaultValues: {
       name: '',
       pointsRequired: 0,
+      minSpend: 0,
       multiplierPercent: 100,
       rank: 1,
       freePickup: false,
@@ -71,6 +73,7 @@ export function EditTierModal({ open, onOpenChange, tier }: EditTierModalProps) 
       form.reset({
         name: tier.name || '',
         pointsRequired: tier.pointsRequired ?? 0,
+        minSpend: tier.minSpend ?? 0,
         multiplierPercent: tier.multiplierPercent ?? tier.multiplier ?? 100,
         rank: tier.rank ?? 1,
         freePickup: tier.freePickup ?? tier.benefits?.freePickup ?? false,
@@ -117,7 +120,7 @@ export function EditTierModal({ open, onOpenChange, tier }: EditTierModalProps) 
             )}
           />
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="pointsRequired"
@@ -132,6 +135,22 @@ export function EditTierModal({ open, onOpenChange, tier }: EditTierModalProps) 
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="minSpend"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Min Spend (₦) *</FormLabel>
+                  <FormControl>
+                    <Input type="number" placeholder="0" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <FormField
               control={form.control}
               name="multiplierPercent"
