@@ -2,6 +2,7 @@
 // LOYALTY LEDGER TAB - Points Transaction History
 // ============================================================================
 
+import React from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { Plus, Minus, ArrowRightLeft } from 'lucide-react';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
@@ -31,22 +32,34 @@ export function LoyaltyLedgerTab() {
     {
       accessorKey: 'customerId',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Customer" />,
-      cell: ({ row }) => (
-        <div className="font-medium">Customer #{row.original.customerId.slice(0, 8)}</div>
-      ),
+      cell: ({ row }) => {
+        const raw = row.original.customerId as unknown;
+        const idStr =
+          typeof raw === 'string'
+            ? raw
+            : (raw as { _id?: string; id?: string })?._id?.toString() ??
+              (raw as { _id?: string; id?: string })?.id?.toString() ??
+              String(raw ?? '');
+        const name = (raw as { name?: string })?.name;
+        return (
+          <div className="font-medium">
+            {name ? name : `Customer #${idStr.slice(0, 8)}`}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'type',
       header: 'Type',
       cell: ({ row }) => {
-        const type = row.original.type;
-        const typeConfig = {
-          EARNED: { label: 'Earned', variant: 'default' as const, icon: <Plus className="h-3 w-3" /> },
-          REDEEMED: { label: 'Redeemed', variant: 'secondary' as const, icon: <Minus className="h-3 w-3" /> },
-          ADJUSTED: { label: 'Adjusted', variant: 'outline' as const, icon: <ArrowRightLeft className="h-3 w-3" /> },
-          EXPIRED: { label: 'Expired', variant: 'destructive' as const, icon: <Minus className="h-3 w-3" /> },
+        const type = String(row.original.type ?? '').toUpperCase();
+        const typeConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive'; icon: React.ReactNode }> = {
+          EARNED: { label: 'Earned', variant: 'default', icon: <Plus className="h-3 w-3" /> },
+          REDEEMED: { label: 'Redeemed', variant: 'secondary', icon: <Minus className="h-3 w-3" /> },
+          ADJUSTED: { label: 'Adjusted', variant: 'outline', icon: <ArrowRightLeft className="h-3 w-3" /> },
+          EXPIRED: { label: 'Expired', variant: 'destructive', icon: <Minus className="h-3 w-3" /> },
         };
-        const config = typeConfig[type];
+        const config = typeConfig[type] ?? { label: type || 'Unknown', variant: 'outline' as const, icon: null };
         return (
           <Badge variant={config.variant}>
             <span className="flex items-center gap-1">
@@ -62,7 +75,7 @@ export function LoyaltyLedgerTab() {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Points" />,
       cell: ({ row }) => {
         const points = row.original.points;
-        const type = row.original.type;
+        const type = String(row.original.type ?? '').toUpperCase();
         const isPositive = type === 'EARNED' || (type === 'ADJUSTED' && points > 0);
         return (
           <div className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
@@ -94,8 +107,8 @@ export function LoyaltyLedgerTab() {
       <DataTable
         columns={columns}
         data={transactions}
-        searchKey="customerId"
-        searchPlaceholder="Search by customer ID..."
+        searchKey="reason"
+        searchPlaceholder="Search by reason..."
         isLoading={isLoading}
       />
     </div>

@@ -375,28 +375,34 @@ export default function OrderDetailPage() {
                   <span>Subtotal</span>
                   <span>₦{(pricing.subtotal || 0).toLocaleString()}</span>
                 </div>
-                {pricing.pickupFee > 0 && (
+                {(pricing.serviceFee || 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>Service Level ({order.serviceLevel || 'standard'})</span>
+                    <span>₦{pricing.serviceFee.toLocaleString()}</span>
+                  </div>
+                )}
+                {(pricing.pickupFee || 0) > 0 && (
                   <div className="flex justify-between">
                     <span>Pickup Fee</span>
                     <span>₦{pricing.pickupFee.toLocaleString()}</span>
                   </div>
                 )}
-                {pricing.deliveryFee > 0 && (
+                {(pricing.deliveryFee || 0) > 0 && (
                   <div className="flex justify-between">
                     <span>Delivery Fee</span>
                     <span>₦{pricing.deliveryFee.toLocaleString()}</span>
                   </div>
                 )}
-                {pricing.discount > 0 && (
+                {(pricing.addOnsFee || 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span>Add-ons</span>
+                    <span>₦{pricing.addOnsFee.toLocaleString()}</span>
+                  </div>
+                )}
+                {(pricing.discount || 0) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
                     <span>-₦{pricing.discount.toLocaleString()}</span>
-                  </div>
-                )}
-                {pricing.tax > 0 && (
-                  <div className="flex justify-between">
-                    <span>Tax</span>
-                    <span>₦{pricing.tax.toLocaleString()}</span>
                   </div>
                 )}
                 <Separator />
@@ -425,6 +431,8 @@ export default function OrderDetailPage() {
                     <SelectItem value="pos">POS</SelectItem>
                     <SelectItem value="transfer">Transfer</SelectItem>
                     <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="card">Card</SelectItem>
+                    <SelectItem value="pay-later">Pay Later</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -457,45 +465,76 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Addresses (if pickup-delivery) */}
-          {order.orderType === 'pickup-delivery' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Truck className="h-5 w-5" />
-                  Addresses
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {order.pickupAddress && (
+          {/* Logistics — Pickup/Delivery Details */}
+          {(() => {
+            const method = (order.pickupMethod || '').toLowerCase();
+            if (method === 'drop_off') return null;
+
+            const zone = order.deliveryZoneId;
+            const pickupWin = order.pickupWindowId;
+            const scheduleDate = order.pickupDate || order.deliveryDate;
+            const scheduleTime = order.scheduledPickupTime;
+
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Truck className="h-5 w-5" />
+                    {method === 'pickup' ? 'Pickup & Delivery Details' : 'Delivery Details'}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Pickup Address — PICKUP only */}
+                  {method === 'pickup' && order.pickupAddress && (
                     <div className="p-3 border rounded-lg space-y-1">
                       <div className="text-sm font-medium flex items-center gap-1">
                         <MapPin className="h-3 w-3" /> Pickup Address
                       </div>
                       <div className="text-sm text-muted-foreground">
                         {order.pickupAddress.street}
+                        {order.pickupAddress.landmark && `, ${order.pickupAddress.landmark}`}
                         {order.pickupAddress.city && `, ${order.pickupAddress.city}`}
                         {order.pickupAddress.state && `, ${order.pickupAddress.state}`}
                       </div>
                     </div>
                   )}
-                  {order.deliveryAddress && (
+
+                  {/* Schedule */}
+                  {scheduleDate && (
                     <div className="p-3 border rounded-lg space-y-1">
                       <div className="text-sm font-medium flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> Delivery Address
+                        <Clock className="h-3 w-3" />
+                        {method === 'pickup' ? 'Pickup Schedule' : 'Delivery Schedule'}
                       </div>
                       <div className="text-sm text-muted-foreground">
-                        {order.deliveryAddress.street}
-                        {order.deliveryAddress.city && `, ${order.deliveryAddress.city}`}
-                        {order.deliveryAddress.state && `, ${order.deliveryAddress.state}`}
+                        {format(new Date(scheduleDate), 'MMM dd, yyyy')}
+                        {scheduleTime && <span className="ml-2">· {scheduleTime}</span>}
+                        {pickupWin && typeof pickupWin === 'object' && !scheduleTime && (
+                          <span className="ml-2">· {pickupWin.startTime} – {pickupWin.endTime}</span>
+                        )}
                       </div>
                     </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+
+                  {/* Delivery Zone */}
+                  {zone && (
+                    <div className="p-3 border rounded-lg space-y-1">
+                      <div className="text-sm font-medium flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> Delivery Zone
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {typeof zone === 'object' ? zone.name : zone}
+                        {typeof zone === 'object' && zone.radiusKm && ` (${zone.radiusKm} km radius)`}
+                      </div>
+                      {typeof zone === 'object' && zone.fee > 0 && (
+                        <div className="text-xs text-muted-foreground">Fee: ₦{zone.fee.toLocaleString()}</div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Status History */}
           {statusHistory.length > 0 && (
@@ -567,6 +606,7 @@ export default function OrderDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Order Type</span>
                 <span className="font-medium capitalize">{order.orderType?.replace('-', ' ') || '—'}</span>
+                {/* {console.log(order)} */}
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Default Service</span>
@@ -575,6 +615,14 @@ export default function OrderDetailPage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Service Level</span>
                 <Badge variant="outline" className="capitalize">{order.serviceLevel || 'standard'}</Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Pickup & Delivery Method</span>
+                <Badge variant="outline" className="capitalize">{order.pickupMethod}</Badge>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Payment Method</span>
+                <Badge variant="outline" className="capitalize">{order.payment.method}</Badge>
               </div>
               {order.qrCode && (
                 <div className="space-y-2 pt-1">
