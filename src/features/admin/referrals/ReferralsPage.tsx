@@ -68,6 +68,17 @@ export default function ReferralsPage() {
     );
   }, [referralList, search]);
 
+  // Group referrals by referrer for the "By Referrer" tab
+  const byReferrer = useMemo(() => {
+    const map = new Map<string, { referrer: Referral['referrerUserId']; items: Referral[] }>();
+    for (const r of referralList) {
+      const key = r.referrerUserId?._id || 'unknown';
+      if (!map.has(key)) map.set(key, { referrer: r.referrerUserId, items: [] });
+      map.get(key)!.items.push(r);
+    }
+    return Array.from(map.values()).sort((a, b) => b.items.length - a.items.length);
+  }, [referralList]);
+
   const ActionsMenu = ({ referral }: { referral: any }) => {
     const status = referral.status;
     return (
@@ -178,7 +189,8 @@ export default function ReferralsPage() {
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="referrals" className="flex-1 sm:flex-none">Referrals</TabsTrigger>
+          <TabsTrigger value="referrals" className="flex-1 sm:flex-none">All Referrals</TabsTrigger>
+          <TabsTrigger value="by-referrer" className="flex-1 sm:flex-none">By Referrer</TabsTrigger>
           <TabsTrigger value="settings" className="flex-1 sm:flex-none">Settings</TabsTrigger>
         </TabsList>
 
@@ -250,6 +262,56 @@ export default function ReferralsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="by-referrer">
+          <div className="space-y-4">
+            {isLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <Card key={i} className="animate-pulse"><CardContent className="p-4 h-24" /></Card>
+              ))
+            ) : byReferrer.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center gap-2 py-10">
+                  <Users className="h-8 w-8 opacity-30 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No referrals yet</p>
+                </CardContent>
+              </Card>
+            ) : byReferrer.map(({ referrer, items }) => (
+              <Card key={referrer?._id || 'unknown'}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base">{referrer?.name || 'Unknown'}</CardTitle>
+                      <CardDescription>{referrer?.email || ''}</CardDescription>
+                    </div>
+                    <Badge variant="secondary">{items.length} referred</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="divide-y">
+                    {items.map((r) => (
+                      <div key={r._id} className="flex items-center justify-between py-2 gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm truncate">{r.refereeUserId?.name || '—'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{r.refereeUserId?.email || ''}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <ReferralStatusBadge status={r.status} />
+                          {r.rewardCredited && (
+                            <span className="text-xs font-medium text-green-600">₦{(r.rewardAmount || 0).toLocaleString()}</span>
+                          )}
+                          <span className="text-xs text-muted-foreground hidden sm:block">
+                            {r.createdAt ? format(new Date(r.createdAt), 'MMM dd, yyyy') : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </TabsContent>
 
         <TabsContent value="settings">

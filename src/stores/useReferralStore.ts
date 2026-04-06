@@ -146,9 +146,10 @@ export const useReferralStore = create<ReferralState>((set, get) => ({
       const response = await apiClient.put(`/referrals/${id}/status`, { status });
 
       if (response.data.success) {
+        const updated = response.data.data?.referral;
         set((state) => ({
           referrals: state.referrals.map((r) =>
-            r._id === id ? { ...r, status: status as Referral['status'] } : r
+            r._id === id ? (updated ? { ...r, ...updated } : { ...r, status: status as Referral['status'] }) : r
           ),
         }));
       }
