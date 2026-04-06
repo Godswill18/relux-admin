@@ -704,6 +704,7 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm font-mono">{order.orderNumber ?? '—'}</span>
+              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
               {isWalkIn && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Walk-in</Badge>}
               <CreatedByBadge role={order.createdByRole} source={order.orderSource} />
             </div>
@@ -747,6 +748,15 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
               {items.length > 1 && ` +${items.length - 1} more`}
             </span>
           </div>
+        )}
+
+        {/* Countdown timer */}
+        {order.stageDeadlineAt && (
+          <CountdownBadge
+            stageDeadlineAt={order.stageDeadlineAt}
+            stageDurationMinutes={order.stageDurationMinutes}
+            variant="compact"
+          />
         )}
 
         {/* Status + payment + amount */}
