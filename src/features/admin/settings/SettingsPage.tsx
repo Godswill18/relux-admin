@@ -2,7 +2,7 @@
 // SETTINGS PAGE - System Configuration
 // ============================================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,44 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Save, Shield } from 'lucide-react';
+import { Save, Shield, Timer, Loader2 } from 'lucide-react';
 import { RolesPermissionsTab } from './tabs/RolesPermissionsTab';
+import { useTimerStore } from '@/stores/useTimerStore';
+import { toast } from 'sonner';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('business');
+
+  // ── Stage Duration Settings ──────────────────────────────────────────────
+  const { durations, isLoading: isLoadingDurations, isSaving, fetchDurations, updateDurations } = useTimerStore();
+  const [durationForm, setDurationForm] = useState<Record<string, string>>({});
+
+  useEffect(() => { fetchDurations(); }, [fetchDurations]);
+  useEffect(() => {
+    setDurationForm({
+      confirmed:          String(durations.confirmed),
+      'picked-up':        String(durations['picked-up']),
+      in_progress:        String(durations.in_progress),
+      washing:            String(durations.washing),
+      ironing:            String(durations.ironing),
+      'out-for-delivery': String(durations['out-for-delivery']),
+    });
+  }, [durations]);
+
+  const handleSaveDurations = async () => {
+    try {
+      const parsed: Record<string, number> = {};
+      for (const [key, val] of Object.entries(durationForm)) {
+        const n = parseInt(val, 10);
+        if (isNaN(n) || n <= 0) { toast.error(`Invalid value for "${key}" — must be a positive number`); return; }
+        parsed[key] = n;
+      }
+      await updateDurations(parsed);
+      toast.success('Stage durations saved');
+    } catch {
+      toast.error('Failed to save stage durations');
+    }
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -44,6 +77,10 @@ export default function SettingsPage() {
             <TabsTrigger value="roles" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
               <Shield className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
               Roles
+            </TabsTrigger>
+            <TabsTrigger value="timers" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
+              <Timer className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              Stage Timers
             </TabsTrigger>
           </TabsList>
         </div>
@@ -225,6 +262,59 @@ export default function SettingsPage() {
         {/* ── Roles & Permissions ───────────────────────────────────────── */}
         <TabsContent value="roles">
           <RolesPermissionsTab />
+        </TabsContent>
+
+        {/* ── Stage Timer Durations ─────────────────────────────────────── */}
+        <TabsContent value="timers">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Timer className="h-5 w-5" />
+                Stage Timer Durations
+              </CardTitle>
+              <CardDescription>
+                Set how many minutes each order stage has before it's considered overdue.
+                Leave a stage out of the timed stages to show no countdown.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {isLoadingDurations ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading…
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {([
+                    { key: 'confirmed',          label: 'Confirmed',          hint: 'Time to act after confirmation' },
+                    { key: 'picked-up',          label: 'Picked Up',          hint: 'Time from pickup to processing start' },
+                    { key: 'in_progress',        label: 'In Progress',        hint: 'General processing window' },
+                    { key: 'washing',            label: 'Washing',            hint: 'Expected wash cycle duration' },
+                    { key: 'ironing',            label: 'Ironing',            hint: 'Expected ironing duration' },
+                    { key: 'out-for-delivery',   label: 'Out for Delivery',   hint: 'Expected delivery window' },
+                  ] as { key: string; label: string; hint: string }[]).map(({ key, label, hint }) => (
+                    <div key={key} className="grid gap-1.5">
+                      <Label htmlFor={`dur-${key}`}>{label} <span className="text-muted-foreground font-normal">(minutes)</span></Label>
+                      <Input
+                        id={`dur-${key}`}
+                        type="number"
+                        min={1}
+                        value={durationForm[key] ?? ''}
+                        onChange={(e) => setDurationForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder="e.g. 90"
+                      />
+                      <p className="text-xs text-muted-foreground">{hint}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Separator />
+              <Button onClick={handleSaveDurations} disabled={isSaving || isLoadingDurations}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save Durations
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

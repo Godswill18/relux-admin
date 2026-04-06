@@ -29,6 +29,8 @@ import {
   Store,
   Receipt,
 } from 'lucide-react';
+import { PriorityBadge } from '@/components/shared/StatusBadges';
+import { CountdownBadge } from '@/components/shared/CountdownBadge';
 
 // ============================================================================
 // CONSTANTS
@@ -142,6 +144,7 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
             <Badge variant={statusVariant(order.status)} className="capitalize text-xs">
               {STATUS_LABELS[order.status] ?? order.status}
             </Badge>
+            <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
             {/* Order source badge */}
             {isWalkIn ? (
               <Badge variant="outline" className="text-xs gap-1 border-orange-400 text-orange-600">
@@ -160,6 +163,16 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
 
         <ScrollArea className="max-h-[70vh] pr-1">
           <div className="space-y-1 pb-2">
+
+            {/* ── Stage Countdown Timer ────────────────────────────────── */}
+            {order.stageDeadlineAt && (
+              <CountdownBadge
+                stageDeadlineAt={order.stageDeadlineAt}
+                stageDurationMinutes={order.stageDurationMinutes}
+                variant="full"
+                className="mb-2"
+              />
+            )}
 
             {/* ── Customer ───────────────────────────────────────────────── */}
             <Section title="Customer" />

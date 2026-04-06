@@ -25,7 +25,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
+import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
+import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { UpdateStatusModal } from './UpdateStatusModal';
 import { StaffOrderDetailModal } from './StaffOrderDetailModal';
 import { CreateOrderModal } from '@/features/admin/orders/CreateOrderModal';
@@ -199,6 +200,23 @@ export default function StaffOrdersPage() {
     };
   }, []);
 
+  // Socket: update deadline fields in-place without refetch
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = (data: { orderId: string; stageDeadlineAt: string | null; stageDurationMinutes: number | null }) => {
+      setOrders((prev) =>
+        prev.map((o) =>
+          (o._id === data.orderId || o.id === data.orderId)
+            ? { ...o, stageDeadlineAt: data.stageDeadlineAt, stageDurationMinutes: data.stageDurationMinutes }
+            : o
+        )
+      );
+    };
+    socket.on('order:timer-updated', handler);
+    return () => { socket.off('order:timer-updated', handler); };
+  }, []);
+
   // ── Fetch orders for active tab ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -279,7 +297,10 @@ export default function StaffOrdersPage() {
       accessorKey: 'orderNumber',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
       cell: ({ row }) => (
-        <span className="font-mono font-semibold text-sm">{row.original.orderNumber ?? '—'}</span>
+        <div className="flex flex-col gap-1">
+          <span className="font-mono font-semibold text-sm">{row.original.orderNumber ?? '—'}</span>
+          <PriorityBadge serviceLevel={row.original.serviceLevel} rush={row.original.rush} />
+        </div>
       ),
     },
     {
@@ -314,6 +335,17 @@ export default function StaffOrdersPage() {
           </div>
         );
       },
+    },
+    {
+      id: 'timer',
+      header: 'Timer',
+      cell: ({ row }) => (
+        <CountdownBadge
+          stageDeadlineAt={row.original.stageDeadlineAt}
+          stageDurationMinutes={row.original.stageDurationMinutes}
+          variant="compact"
+        />
+      ),
     },
     {
       accessorKey: 'createdAt',

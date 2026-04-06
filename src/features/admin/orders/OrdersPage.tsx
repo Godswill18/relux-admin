@@ -18,12 +18,13 @@ import { EditOrderModal } from './EditOrderModal';
 import { AssignStaffModal } from './AssignStaffModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
+import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -137,6 +138,23 @@ export default function OrdersPage() {
     };
   }, []);
 
+  // Socket: update deadline fields in-place without refetch (order:timer-updated)
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+    const handler = (data: { orderId: string; stageDeadlineAt: string | null; stageDurationMinutes: number | null }) => {
+      setOrders((prev) =>
+        prev.map((o) =>
+          (o._id === data.orderId || o.id === data.orderId)
+            ? { ...o, stageDeadlineAt: data.stageDeadlineAt, stageDurationMinutes: data.stageDurationMinutes }
+            : o
+        )
+      );
+    };
+    socket.on('order:timer-updated', handler);
+    return () => { socket.off('order:timer-updated', handler); };
+  }, []);
+
   // ── Fetch orders for active tab ──────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -202,7 +220,10 @@ export default function OrdersPage() {
       accessorKey: 'orderNumber',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Order #" />,
       cell: ({ row }) => (
-        <div className="font-medium font-mono">{row.original.orderNumber || '—'}</div>
+        <div className="flex flex-col gap-1">
+          <span className="font-medium font-mono">{row.original.orderNumber || '—'}</span>
+          <PriorityBadge serviceLevel={row.original.serviceLevel} rush={row.original.rush} />
+        </div>
       ),
     },
     {
@@ -260,6 +281,17 @@ export default function OrdersPage() {
             <span className="text-muted-foreground italic">Unassigned</span>
           )}
         </div>
+      ),
+    },
+    {
+      id: 'timer',
+      header: 'Timer',
+      cell: ({ row }) => (
+        <CountdownBadge
+          stageDeadlineAt={row.original.stageDeadlineAt}
+          stageDurationMinutes={row.original.stageDurationMinutes}
+          variant="compact"
+        />
       ),
     },
     {

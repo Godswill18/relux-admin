@@ -21,10 +21,14 @@ import {
   Store,
   Wifi,
   Printer,
-  ScanLine,
   AlertTriangle,
+  Pencil,
+  Wallet,
+  History,
 } from 'lucide-react';
 import { OrderReceiptModal } from './OrderReceiptModal';
+import { EditOrderModal } from './EditOrderModal';
+import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,7 +45,8 @@ import { useStaffStore } from '@/stores/useStaffStore';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import apiClient from '@/lib/api/client';
-import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
+import socketClient from '@/lib/socket/client';
+import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import { getOrderStatusConfig } from '@/lib/statusConfig';
 
 // ============================================================================
@@ -94,6 +99,9 @@ export default function OrderDetailPage() {
   const [isAssigningStaff, setIsAssigningStaff] = useState(false);
   const [staffFetched, setStaffFetched] = useState(false);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [isChargingWallet, setIsChargingWallet] = useState(false);
 
   // Fetch single order
   useEffect(() => {
@@ -124,6 +132,57 @@ export default function OrderDetailPage() {
       fetchStaff().then(() => setStaffFetched(true));
     }
   }, [staffFetched, staffList.length, fetchStaff]);
+
+  // Real-time: update countdown deadline when backend emits timer-updated for this order
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket || !id) return;
+    const handler = (data: { orderId: string; stageDeadlineAt: string | null; stageDurationMinutes: number | null }) => {
+      if (data.orderId !== id) return;
+      setOrder((prev: any) =>
+        prev ? { ...prev, stageDeadlineAt: data.stageDeadlineAt, stageDurationMinutes: data.stageDurationMinutes } : prev
+      );
+    };
+    socket.on('order:timer-updated', handler);
+    return () => { socket.off('order:timer-updated', handler); };
+  }, [id]);
+
+  // Fetch customer wallet balance whenever order is partial
+  useEffect(() => {
+    if (!order || order.paymentStatus !== 'partial') return;
+    const customerId = order.customer?.customerId?._id
+      || (typeof order.customer?.customerId === 'string' ? order.customer.customerId : null)
+      || order.customerId;
+    if (!customerId) return;
+    apiClient.get(`/wallets/customer/${customerId}`)
+      .then((res) => {
+        const bal = res.data?.data?.wallet?.balance ?? res.data?.data?.balance ?? null;
+        setWalletBalance(bal);
+      })
+      .catch(() => setWalletBalance(null));
+  }, [order?.paymentStatus, order?.customer, order?.customerId]);
+
+  // Charge remaining balance from customer's wallet
+  const handlePayBalance = async () => {
+    if (!id || !order) return;
+    setIsChargingWallet(true);
+    try {
+      const res = await apiClient.post(`/orders/${id}/pay-balance`);
+      const { order: updated, amountCharged, walletBalance: newBal } = res.data.data;
+      setOrder((prev: any) => ({
+        ...prev,
+        paymentStatus: 'paid',
+        payment: { ...prev.payment, status: 'paid', amount: prev.total },
+        ...(updated || {}),
+      }));
+      setWalletBalance(newBal);
+      toast.success(`₦${amountCharged.toLocaleString()} charged from wallet. Order fully paid.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to charge wallet');
+    } finally {
+      setIsChargingWallet(false);
+    }
+  };
 
   // Handle staff assignment
   const handleAssignStaff = async (staffId: string) => {
@@ -248,9 +307,12 @@ export default function OrderDetailPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="min-w-0">
-            <h1 className="text-xl sm:text-2xl font-bold truncate">
-              {order.orderNumber || order.code || `Order #${order._id?.substring(0, 8)}`}
-            </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold truncate">
+                {order.orderNumber || order.code || `Order #${order._id?.substring(0, 8)}`}
+              </h1>
+              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
+            </div>
             <p className="text-sm text-muted-foreground">
               Created {order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy · h:mm a') : '—'}
             </p>
@@ -262,6 +324,12 @@ export default function OrderDetailPage() {
             <Printer className="mr-2 h-4 w-4" />
             <span className="hidden xs:inline">Print </span>Receipt
           </Button>
+          {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
+            <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit Order
+            </Button>
+          )}
           <OrderStatusBadge status={order.status} />
           <Select
             value={order.status}
@@ -290,6 +358,13 @@ export default function OrderDetailPage() {
         open={isReceiptOpen}
         onOpenChange={setIsReceiptOpen}
         order={order}
+      />
+
+      <EditOrderModal
+        open={isEditOpen}
+        onOpenChange={setIsEditOpen}
+        order={order}
+        onSaved={(updated) => setOrder(updated)}
       />
 
       {/* Payment gate warning — shown when order is approaching delivery but not paid */}
@@ -411,6 +486,51 @@ export default function OrderDetailPage() {
                   <span>₦{(pricing.total || order.total || 0).toLocaleString()}</span>
                 </div>
               </div>
+
+              {/* ── Partial Payment Panel ───────────────────────────────── */}
+              {order.paymentStatus === 'partial' && (() => {
+                const alreadyPaid = payment.amount || 0;
+                const orderTotal  = pricing.total || order.total || 0;
+                const balanceDue  = Math.max(0, Math.round((orderTotal - alreadyPaid) * 100) / 100);
+                return (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium text-sm">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      Partial Payment — Balance Outstanding
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Previously Paid</p>
+                        <p className="font-semibold text-green-700">₦{alreadyPaid.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Order Total</p>
+                        <p className="font-semibold">₦{orderTotal.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Balance Due</p>
+                        <p className="font-semibold text-destructive">₦{balanceDue.toLocaleString()}</p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      className="w-full gap-2"
+                      onClick={handlePayBalance}
+                      disabled={isChargingWallet}
+                    >
+                      {isChargingWallet
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <Wallet className="h-4 w-4" />}
+                      Pay ₦{balanceDue.toLocaleString()} from Wallet
+                      {walletBalance !== null && (
+                        <span className="ml-auto text-xs opacity-75">
+                          Balance: ₦{walletBalance.toLocaleString()}
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+                );
+              })()}
 
               <Separator />
 
@@ -576,10 +696,80 @@ export default function OrderDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Edit History */}
+          {(order.editHistory || []).length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <History className="h-5 w-5" />
+                  Edit History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {(order.editHistory as any[]).map((entry: any, idx: number) => {
+                    const diff = entry.difference ?? 0;
+                    const isRefund = diff > 0;
+                    const isExtra  = diff < 0;
+                    return (
+                      <div key={idx} className="space-y-1.5 border-b last:border-0 pb-3 last:pb-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-xs text-muted-foreground">
+                            {entry.editedAt
+                              ? format(new Date(entry.editedAt), 'MMM dd, yyyy · h:mm a')
+                              : '—'}
+                            {entry.editedBy?.name && (
+                              <span className="ml-1">by <strong>{entry.editedBy.name}</strong></span>
+                            )}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground line-through">
+                              ₦{(entry.previousTotal || 0).toLocaleString()}
+                            </span>
+                            <span className="text-xs">→</span>
+                            <span className="text-xs font-medium">
+                              ₦{(entry.newTotal || 0).toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                        {isRefund && (
+                          <div className="flex items-center gap-1.5 text-xs text-green-700">
+                            <Wallet className="h-3 w-3 shrink-0" />
+                            {entry.refundIssued
+                              ? `₦${diff.toLocaleString()} refunded to wallet`
+                              : `₦${diff.toLocaleString()} overpaid — manual refund may be required`}
+                          </div>
+                        )}
+                        {isExtra && (
+                          <div className="flex items-center gap-1.5 text-xs text-destructive">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            ₦{Math.abs(diff).toLocaleString()} additional payment required
+                          </div>
+                        )}
+                        {entry.notes && (
+                          <p className="text-xs text-muted-foreground italic">{entry.notes}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column - Sidebar */}
         <div className="space-y-6">
+          {/* Stage Countdown Timer */}
+          {order.stageDeadlineAt && (
+            <CountdownBadge
+              stageDeadlineAt={order.stageDeadlineAt}
+              stageDurationMinutes={order.stageDurationMinutes}
+              variant="full"
+            />
+          )}
+
           {/* Order Info */}
           <Card>
             <CardHeader>
