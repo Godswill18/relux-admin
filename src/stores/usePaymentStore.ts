@@ -19,6 +19,12 @@ interface PaymentSettings {
   flutterwaveSecretKey?: string;
 }
 
+interface SecretKeyFlags {
+  paystackSecretKeySet: boolean;
+  lencoSecretKeySet: boolean;
+  flutterwaveSecretKeySet: boolean;
+}
+
 interface PaymentFilters {
   status?: string;
   method?: PaymentMethod | 'all';
@@ -29,16 +35,30 @@ interface PaymentFilters {
 
 const PAGE_LIMIT = 20;
 
+interface PaystackStats {
+  totalRevenue: number;
+  pendingCount: number;
+  failedCount: number;
+}
+
 interface PaymentState {
   // State
   payments: Payment[];
   settings: PaymentSettings;
+  secretKeyFlags: SecretKeyFlags;
   filters: PaymentFilters;
   isLoading: boolean;
   isFetchingMore: boolean;
   hasMore: boolean;
   currentPage: number;
   error: string | null;
+
+  // Paystack transactions
+  paystackTransactions: any[];
+  paystackStats: PaystackStats;
+  isLoadingPaystack: boolean;
+  paystackPage: number;
+  paystackHasMore: boolean;
 
   // Actions
   fetchPayments: () => Promise<void>;
@@ -48,6 +68,9 @@ interface PaymentState {
   setFilters: (filters: Partial<PaymentFilters>) => void;
   confirmPayment: (paymentId: string) => Promise<void>;
   refundPayment: (paymentId: string, amount: number) => Promise<void>;
+  fetchPaystackTransactions: (params?: Record<string, string>) => Promise<void>;
+  /** Prepend a newly arrived transaction from socket without refetch */
+  prependPaystackTransaction: (tx: any) => void;
 }
 
 // ============================================================================
@@ -60,6 +83,11 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   settings: {
     enabledMethods: [PaymentMethod.CASH, PaymentMethod.WALLET, PaymentMethod.POS],
   },
+  secretKeyFlags: {
+    paystackSecretKeySet: false,
+    lencoSecretKeySet: false,
+    flutterwaveSecretKeySet: false,
+  },
   filters: {
     status: 'all',
     method: 'all',
@@ -70,6 +98,11 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   hasMore: false,
   currentPage: 1,
   error: null,
+  paystackTransactions: [],
+  paystackStats: { totalRevenue: 0, pendingCount: 0, failedCount: 0 },
+  isLoadingPaystack: false,
+  paystackPage: 1,
+  paystackHasMore: false,
 
   // Fetch payments (resets to page 1)
   fetchPayments: async () => {
@@ -144,7 +177,30 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       const response = await apiClient.get('/settings/payment');
 
       if (response.data.success) {
-        set({ settings: response.data.data });
+        const { settings: raw, paystackSecretKeySet, lencoSecretKeySet, flutterwaveSecretKeySet } = response.data.data;
+
+        // Map backend boolean flags → enabledMethods array
+        const enabledMethods: PaymentMethod[] = [];
+        if (raw.enableCash)     enabledMethods.push(PaymentMethod.CASH);
+        if (raw.enableWallet)   enabledMethods.push(PaymentMethod.WALLET);
+        if (raw.enablePos)      enabledMethods.push(PaymentMethod.POS);
+        if (raw.enablePaystack) enabledMethods.push(PaymentMethod.PAYSTACK);
+        if (raw.enableTransfer) enabledMethods.push(PaymentMethod.TRANSFER);
+        if (raw.enableLenco)    enabledMethods.push(PaymentMethod.LENCO);
+
+        set({
+          settings: {
+            enabledMethods,
+            paystackPublicKey:    raw.paystackPublicKey    || '',
+            lencoApiKey:          raw.lencoPublicKey       || '',
+            flutterwavePublicKey: raw.flutterwavePublicKey || '',
+          },
+          secretKeyFlags: {
+            paystackSecretKeySet:    !!paystackSecretKeySet,
+            lencoSecretKeySet:       !!lencoSecretKeySet,
+            flutterwaveSecretKeySet: !!flutterwaveSecretKeySet,
+          },
+        });
       }
     } catch (error: any) {
       // Settings may not be configured yet — keep defaults
@@ -155,11 +211,46 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   // Update settings (backend route: /api/v1/settings/payment)
   updateSettings: async (newSettings) => {
     try {
-      const response = await apiClient.put('/settings/payment', newSettings);
+      // Map enabledMethods array → backend boolean flags
+      const methods = newSettings.enabledMethods || get().settings.enabledMethods;
+      const payload: Record<string, any> = {
+        enableCash:     methods.includes(PaymentMethod.CASH),
+        enableWallet:   methods.includes(PaymentMethod.WALLET),
+        enablePos:      methods.includes(PaymentMethod.POS),
+        enablePaystack: methods.includes(PaymentMethod.PAYSTACK),
+        enableTransfer: methods.includes(PaymentMethod.TRANSFER),
+        enableLenco:    methods.includes(PaymentMethod.LENCO),
+        paystackPublicKey:    newSettings.paystackPublicKey    ?? get().settings.paystackPublicKey,
+        flutterwavePublicKey: newSettings.flutterwavePublicKey ?? get().settings.flutterwavePublicKey,
+        // Map frontend field names to backend field names
+        lencoPublicKey: newSettings.lencoApiKey ?? get().settings.lencoApiKey,
+      };
+
+      // Only include secret keys if the user actually typed a value
+      if (newSettings.paystackSecretKey)    payload.paystackSecretKey    = newSettings.paystackSecretKey;
+      if (newSettings.lencoApiKey && newSettings.lencoApiKey !== get().settings.lencoApiKey) {
+        // lencoApiKey in the UI maps to the secret/API key on backend
+        payload.lencoSecretKey = newSettings.lencoApiKey;
+      }
+      if (newSettings.flutterwaveSecretKey) payload.flutterwaveSecretKey = newSettings.flutterwaveSecretKey;
+
+      const response = await apiClient.put('/settings/payment', payload);
 
       if (response.data.success) {
+        // Update store with new settings (secret keys are cleared locally for security)
         set((state) => ({
-          settings: { ...state.settings, ...newSettings },
+          settings: {
+            ...state.settings,
+            ...newSettings,
+            // Never store secret keys in the store after save
+            paystackSecretKey:    undefined,
+            flutterwaveSecretKey: undefined,
+          },
+          secretKeyFlags: {
+            paystackSecretKeySet:    !!(newSettings.paystackSecretKey    || state.secretKeyFlags.paystackSecretKeySet),
+            lencoSecretKeySet:       !!(newSettings.lencoApiKey          || state.secretKeyFlags.lencoSecretKeySet),
+            flutterwaveSecretKeySet: !!(newSettings.flutterwaveSecretKey || state.secretKeyFlags.flutterwaveSecretKeySet),
+          },
         }));
       }
     } catch (error: any) {
@@ -194,7 +285,6 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   refundPayment: async (paymentId, amount) => {
     try {
       const response = await apiClient.post(`/payments/${paymentId}/refund`, { amount });
-
       if (response.data.success) {
         await get().fetchPayments();
       }
@@ -202,5 +292,74 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
       set({ error: error.message || 'Failed to refund payment' });
       throw error;
     }
+  },
+
+  // Fetch Paystack transactions
+  fetchPaystackTransactions: async (params = {}) => {
+    set({ isLoadingPaystack: true });
+    try {
+      const response = await apiClient.get('/payments/paystack/transactions', { params: { limit: '20', ...params } });
+      if (response.data.success) {
+        const { transactions, stats } = response.data.data;
+        const pagination = response.data.pagination;
+        set({
+          paystackTransactions: transactions || [],
+          paystackStats: stats || { totalRevenue: 0, pendingCount: 0, failedCount: 0 },
+          paystackPage: 1,
+          paystackHasMore: pagination ? pagination.page < pagination.pages : false,
+          isLoadingPaystack: false,
+        });
+      }
+    } catch {
+      set({ isLoadingPaystack: false });
+    }
+  },
+
+  prependPaystackTransaction: (tx) => {
+    set((state) => {
+      // If a transaction with this reference already exists (e.g. it was pending),
+      // update it in place instead of duplicating it at the top.
+      const existingIndex = state.paystackTransactions.findIndex(
+        (t: any) => t.reference === tx.reference || t._id?.toString() === tx.transactionId?.toString()
+      );
+
+      let updatedList: any[];
+      let prevStatus: string | null = null;
+
+      if (existingIndex !== -1) {
+        prevStatus = state.paystackTransactions[existingIndex].status;
+        updatedList = state.paystackTransactions.map((t: any, i: number) =>
+          i === existingIndex ? { ...t, ...tx } : t
+        );
+      } else {
+        updatedList = [tx, ...state.paystackTransactions];
+      }
+
+      // Recalculate stat deltas based on status transition
+      const wasAlreadyPaid    = prevStatus === 'paid';
+      const wasAlreadyPending = prevStatus === 'pending';
+      const wasAlreadyFailed  = prevStatus === 'failed';
+
+      return {
+        paystackTransactions: updatedList,
+        paystackStats: {
+          ...state.paystackStats,
+          totalRevenue:
+            tx.status === 'paid' && !wasAlreadyPaid
+              ? state.paystackStats.totalRevenue + (tx.amount || 0)
+              : state.paystackStats.totalRevenue,
+          pendingCount:
+            tx.status === 'pending' && !wasAlreadyPending
+              ? state.paystackStats.pendingCount + 1
+              : wasAlreadyPending && tx.status !== 'pending'
+              ? Math.max(0, state.paystackStats.pendingCount - 1)
+              : state.paystackStats.pendingCount,
+          failedCount:
+            tx.status === 'failed' && !wasAlreadyFailed
+              ? state.paystackStats.failedCount + 1
+              : state.paystackStats.failedCount,
+        },
+      };
+    });
   },
 }));
