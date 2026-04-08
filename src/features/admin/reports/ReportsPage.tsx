@@ -176,8 +176,10 @@ export default function ReportsPage() {
         <TabsContent value="staff">
           <Card>
             <CardHeader>
-              <CardTitle>Staff Productivity</CardTitle>
-              <CardDescription>Orders handled and completion rates per staff member</CardDescription>
+              <CardTitle>Staff Performance</CardTitle>
+              <CardDescription>
+                Orders assigned, completion rates, status updates, walk-ins, shifts & attendance per staff member
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <StaffProductivityChart />

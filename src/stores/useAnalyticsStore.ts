@@ -43,10 +43,19 @@ interface StaffProductivity {
   _id: string;
   name: string;
   role: string;
+  email?: string;
   orderCount: number;
   totalRevenue: number;
   completedOrders: number;
+  inProgressOrders: number;
+  cancelledOrders: number;
   completionRate: number;
+  statusUpdates: number;
+  walkinOrders: number;
+  shiftsWorked: number;
+  attendanceCount: number;
+  presentCount: number;
+  lateCount: number;
 }
 
 interface AnalyticsState {
@@ -62,7 +71,7 @@ interface AnalyticsState {
   fetchRevenueReport: (params?: { startDate?: string; endDate?: string; groupBy?: string }) => Promise<void>;
   fetchOrderStats: () => Promise<void>;
   fetchPayrollStats: () => Promise<void>;
-  fetchStaffProductivity: () => Promise<void>;
+  fetchStaffProductivity: (params?: { startDate?: string; endDate?: string }) => Promise<void>;
 }
 
 // ============================================================================
@@ -127,10 +136,10 @@ export const useAnalyticsStore = create<AnalyticsState>((set) => ({
     }
   },
 
-  fetchStaffProductivity: async () => {
+  fetchStaffProductivity: async (params) => {
     try {
       set({ isLoading: true, error: null });
-      const response = await apiClient.get('/admin/stats/staff-productivity');
+      const response = await apiClient.get('/admin/stats/staff-productivity', { params });
       if (response.data.success) {
         const data = response.data.data;
         set({ staffProductivity: data.staffOrders || data || [], isLoading: false });

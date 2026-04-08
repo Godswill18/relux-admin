@@ -11,11 +11,18 @@ import apiClient from '@/lib/api/client';
 // ============================================================================
 
 interface LoyaltySettings {
-  pointsPerNaira: number;
-  signupBonus: number;
-  referralBonus: number;
-  birthdayBonus: number;
   enabled: boolean;
+  pointsPerCurrency: number;          // points earned per ₦1 spent
+  walletConversionEnabled: boolean;   // whether conversion is allowed
+  walletConversionRate: number;       // X points = ₦1
+  minConvertPoints: number;           // minimum points needed to convert
+  minRedeemPoints: number;
+  redemptionEnabled: boolean;
+  maxPointsPerOrder?: number;
+  bonusFirstOrderPoints: number;
+  bonusSecondOrderPoints: number;
+  weekendMultiplierEnabled: boolean;
+  weekendMultiplierPercent: number;
 }
 
 interface LoyaltyState {
@@ -46,11 +53,17 @@ export const useLoyaltyStore = create<LoyaltyState>((set, get) => ({
   tiers: [],
   transactions: [],
   settings: {
-    pointsPerNaira: 1,
-    signupBonus: 100,
-    referralBonus: 500,
-    birthdayBonus: 200,
     enabled: true,
+    pointsPerCurrency: 1,
+    walletConversionEnabled: true,
+    walletConversionRate: 100,
+    minConvertPoints: 100,
+    minRedeemPoints: 100,
+    redemptionEnabled: true,
+    bonusFirstOrderPoints: 0,
+    bonusSecondOrderPoints: 0,
+    weekendMultiplierEnabled: false,
+    weekendMultiplierPercent: 200,
   },
   isLoading: false,
   error: null,

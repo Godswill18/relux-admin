@@ -2,37 +2,226 @@
 // PAYMENTS PAGE - Payment Management Interface
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { usePaymentStore } from '@/stores/usePaymentStore';
 import { TransactionsTab } from './TransactionsTab';
 import { PaymentSettingsTab } from './PaymentSettingsTab';
-import { DollarSign, CreditCard, XCircle, Wifi, Search, TrendingUp, RefreshCw } from 'lucide-react';
+import {
+  DollarSign, CreditCard, XCircle, Wifi, Search, TrendingUp,
+  RefreshCw, ChevronLeft, ChevronRight, X, Receipt, User,
+} from 'lucide-react';
 import { usePaymentSocket } from '@/lib/hooks/usePaymentSocket';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
 import apiClient from '@/lib/api/client';
 
-// ============================================================================
-// PAYSTACK TRANSACTIONS TAB (inline)
-// ============================================================================
+const PAGE_SIZE = 15;
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function statusColor(status: string) {
+  if (status === 'paid' || status === 'success') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+  if (status === 'failed')  return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+  if (status === 'pending') return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+  return 'bg-muted text-muted-foreground';
+}
+
+function typeLabel(type: string) {
+  if (type === 'wallet_topup')  return 'Wallet Top-up';
+  if (type === 'order')         return 'Order Payment';
+  if (type === 'subscription')  return 'Subscription';
+  return type || '—';
+}
+
+function fmt(date: string | Date | undefined) {
+  if (!date) return '—';
+  try { return format(new Date(date), 'dd MMM yyyy, HH:mm'); }
+  catch { return '—'; }
+}
+
+// ─── Transaction Detail Modal ────────────────────────────────────────────────
+
+function TransactionDetailModal({
+  tx,
+  onClose,
+  onRetry,
+  retrying,
+}: {
+  tx: any;
+  onClose: () => void;
+  onRetry: (ref: string) => void;
+  retrying: string | null;
+}) {
+  if (!tx) return null;
+
+  const customer = tx.customerId as any;
+  const canRetry = tx.status === 'pending' || (tx.status === 'paid' && !tx.webhookProcessed);
+
+  return (
+    <Dialog open={!!tx} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="w-4 h-4" />
+            Transaction Details
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* Amount hero */}
+        <div className="flex flex-col items-center py-3 gap-2 border-b">
+          <p className="text-3xl font-bold">₦{(tx.amount || 0).toLocaleString()}</p>
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor(tx.status)}`}>
+              {tx.status}
+            </span>
+            <span className="text-xs text-muted-foreground">{typeLabel(tx.type)}</span>
+          </div>
+        </div>
+
+        {/* Detail rows */}
+        <div className="space-y-3 text-sm pt-1">
+          {/* Reference */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-0.5">Reference</p>
+            <p className="font-mono text-xs break-all bg-muted px-2 py-1 rounded">{tx.reference}</p>
+          </div>
+
+          {/* Customer */}
+          {customer && (
+            <div className="flex items-start gap-2">
+              <User className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+              <div>
+                <p className="font-medium">{customer.name || '—'}</p>
+                {customer.phone && <p className="text-xs text-muted-foreground">{customer.phone}</p>}
+                {customer.email && <p className="text-xs text-muted-foreground">{customer.email}</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Created</p>
+              <p className="font-medium text-xs">{fmt(tx.createdAt)}</p>
+            </div>
+            {tx.paidAt && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Paid At</p>
+                <p className="font-medium text-xs">{fmt(tx.paidAt)}</p>
+              </div>
+            )}
+            {tx.orderId && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-0.5">Order</p>
+                <p className="font-medium text-xs">{(tx.orderId as any)?.orderNumber || '—'}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Webhook</p>
+              <p className={`text-xs font-medium ${tx.webhookProcessed ? 'text-green-600' : 'text-yellow-600'}`}>
+                {tx.webhookProcessed ? 'Processed' : 'Not processed'}
+              </p>
+            </div>
+          </div>
+
+          {tx.failureReason && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Failure Reason</p>
+              <p className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded">
+                {tx.failureReason}
+              </p>
+            </div>
+          )}
+
+          {tx.paystackData?.gateway_response && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-0.5">Gateway Response</p>
+              <p className="text-xs text-muted-foreground">{tx.paystackData.gateway_response}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2 mt-2 pt-3 border-t">
+          {canRetry && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onRetry(tx.reference)}
+              disabled={retrying === tx.reference}
+              className="gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${retrying === tx.reference ? 'animate-spin' : ''}`} />
+              {retrying === tx.reference ? 'Retrying…' : 'Retry'}
+            </Button>
+          )}
+          <Button size="sm" onClick={onClose} className="flex-1">Close</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Paystack Tab ────────────────────────────────────────────────────────────
 
 function PaystackTab() {
   const {
     paystackTransactions,
     paystackStats,
+    paystackPagination,
     isLoadingPaystack,
+    fetchPaystackTransactions,
+    prependPaystackTransaction,
   } = usePaymentStore();
 
-  const { fetchPaystackTransactions, prependPaystackTransaction } = usePaymentStore();
-  const [search, setSearch]       = useState('');
-  const [statusFilter, setStatus] = useState('all');
-  const [typeFilter, setType]     = useState('all');
-  const [retrying, setRetrying]   = useState<string | null>(null);
+  const [search,       setSearch]       = useState('');
+  const [statusFilter, setStatus]       = useState('all');
+  const [typeFilter,   setType]         = useState('all');
+  const [dateFrom,     setDateFrom]     = useState('');
+  const [dateTo,       setDateTo]       = useState('');
+  const [page,         setPage]         = useState(1);
+  const [selectedTx,   setSelectedTx]   = useState<any>(null);
+  const [retrying,     setRetrying]     = useState<string | null>(null);
+
+  // Debounce search so we don't fire on every keystroke
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedSearch(val);
+      setPage(1);
+    }, 350);
+  };
+
+  const resetPage = () => setPage(1);
+
+  const load = useCallback(() => {
+    const params: Record<string, string> = {
+      page:  String(page),
+      limit: String(PAGE_SIZE),
+    };
+    if (statusFilter !== 'all') params.status   = statusFilter;
+    if (typeFilter   !== 'all') params.type     = typeFilter;
+    if (debouncedSearch)        params.search   = debouncedSearch;
+    if (dateFrom)               params.dateFrom = dateFrom;
+    if (dateTo)                 params.dateTo   = dateTo;
+    fetchPaystackTransactions(params);
+  }, [page, statusFilter, typeFilter, debouncedSearch, dateFrom, dateTo, fetchPaystackTransactions]);
+
+  useEffect(() => { load(); }, [load]);
 
   const handleRetry = async (reference: string) => {
     setRetrying(reference);
@@ -41,7 +230,8 @@ function PaystackTab() {
       if (res.data.success) {
         toast.success('Transaction processed — wallet credited');
         prependPaystackTransaction({ ...res.data.data.transaction, status: 'paid' });
-        fetchPaystackTransactions();
+        setSelectedTx(null);
+        load();
       } else {
         toast.error(res.data.message || 'Still pending on Paystack');
       }
@@ -52,28 +242,10 @@ function PaystackTab() {
     }
   };
 
-  const filtered = (paystackTransactions || []).filter((tx: any) => {
-    const matchSearch =
-      !search ||
-      tx.reference?.toLowerCase().includes(search.toLowerCase()) ||
-      tx.email?.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === 'all' || tx.status === statusFilter;
-    const matchType   = typeFilter   === 'all' || tx.type   === typeFilter;
-    return matchSearch && matchStatus && matchType;
-  });
-
-  function statusColor(status: string) {
-    if (status === 'paid' || status === 'success') return 'bg-green-100 text-green-700';
-    if (status === 'failed')  return 'bg-red-100 text-red-700';
-    if (status === 'pending') return 'bg-yellow-100 text-yellow-700';
-    return 'bg-muted text-muted-foreground';
-  }
-
-  function typeLabel(type: string) {
-    if (type === 'wallet_topup') return 'Wallet Top-up';
-    if (type === 'order')        return 'Order Payment';
-    return type || '—';
-  }
+  const clearDates = () => { setDateFrom(''); setDateTo(''); resetPage(); };
+  const hasDate = !!(dateFrom || dateTo);
+  const totalPages = paystackPagination?.pages ?? 1;
+  const totalCount = paystackPagination?.total ?? paystackTransactions.length;
 
   return (
     <div className="space-y-4">
@@ -93,18 +265,18 @@ function PaystackTab() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters row 1: search + status + type */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search reference or email..."
+            placeholder="Search by reference..."
             className="pl-9"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatus}>
+        <Select value={statusFilter} onValueChange={(v) => { setStatus(v); resetPage(); }}>
           <SelectTrigger className="w-full sm:w-36">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
@@ -115,7 +287,7 @@ function PaystackTab() {
             <SelectItem value="failed">Failed</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={typeFilter} onValueChange={setType}>
+        <Select value={typeFilter} onValueChange={(v) => { setType(v); resetPage(); }}>
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Type" />
           </SelectTrigger>
@@ -127,19 +299,54 @@ function PaystackTab() {
         </Select>
       </div>
 
+      {/* Filters row 2: date range */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[130px]">
+          <Label className="text-xs text-muted-foreground mb-1 block">From</Label>
+          <Input
+            type="date"
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => { setDateFrom(e.target.value); resetPage(); }}
+            className="h-8 text-sm"
+          />
+        </div>
+        <div className="flex-1 min-w-[130px]">
+          <Label className="text-xs text-muted-foreground mb-1 block">To</Label>
+          <Input
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => { setDateTo(e.target.value); resetPage(); }}
+            className="h-8 text-sm"
+          />
+        </div>
+        {hasDate && (
+          <Button variant="ghost" size="sm" onClick={clearDates} className="h-8 px-2 shrink-0" title="Clear dates">
+            <X className="w-4 h-4" />
+          </Button>
+        )}
+        <div className="flex items-end ml-auto">
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {totalCount} transaction{totalCount !== 1 ? 's' : ''}
+          </p>
+        </div>
+      </div>
+
       {/* Loading */}
       {isLoadingPaystack && (
         <div className="py-10 text-center text-muted-foreground text-sm">Loading transactions…</div>
       )}
 
-      {/* Desktop table */}
       {!isLoadingPaystack && (
         <>
+          {/* Desktop table */}
           <div className="hidden md:block rounded-md border overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr>
                   <th className="px-4 py-3 text-left font-medium">Reference</th>
+                  <th className="px-4 py-3 text-left font-medium">Customer</th>
                   <th className="px-4 py-3 text-left font-medium">Type</th>
                   <th className="px-4 py-3 text-left font-medium">Amount</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
@@ -148,41 +355,53 @@ function PaystackTab() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filtered.length === 0 ? (
+                {paystackTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                    <td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">
                       No transactions found
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((tx: any) => (
-                    <tr key={tx._id || tx.reference} className="hover:bg-muted/30">
-                      <td className="px-4 py-3 font-mono text-xs">{tx.reference}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{typeLabel(tx.type)}</td>
-                      <td className="px-4 py-3 font-medium">₦{(tx.amount || 0).toLocaleString()}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(tx.status)}`}>
-                          {tx.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        {tx.createdAt ? format(new Date(tx.createdAt), 'dd MMM yyyy, HH:mm') : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {(tx.status === 'pending' || (tx.status === 'paid' && !tx.webhookProcessed)) && (
-                          <button
-                            onClick={() => handleRetry(tx.reference)}
-                            disabled={retrying === tx.reference}
-                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                            title="Force-process this transaction"
-                          >
-                            <RefreshCw className={`h-3 w-3 ${retrying === tx.reference ? 'animate-spin' : ''}`} />
-                            {retrying === tx.reference ? 'Retrying…' : 'Retry'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                  paystackTransactions.map((tx: any) => {
+                    const customer = tx.customerId as any;
+                    return (
+                      <tr
+                        key={tx._id || tx.reference}
+                        className="hover:bg-muted/30 cursor-pointer"
+                        onClick={() => setSelectedTx(tx)}
+                      >
+                        <td className="px-4 py-3 font-mono text-xs">{tx.reference}</td>
+                        <td className="px-4 py-3">
+                          {customer ? (
+                            <div>
+                              <p className="font-medium text-xs">{customer.name || '—'}</p>
+                              <p className="text-xs text-muted-foreground">{customer.phone || customer.email || ''}</p>
+                            </div>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{typeLabel(tx.type)}</td>
+                        <td className="px-4 py-3 font-medium">₦{(tx.amount || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColor(tx.status)}`}>
+                            {tx.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground text-xs">{fmt(tx.createdAt)}</td>
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          {(tx.status === 'pending' || (tx.status === 'paid' && !tx.webhookProcessed)) && (
+                            <button
+                              onClick={() => handleRetry(tx.reference)}
+                              disabled={retrying === tx.reference}
+                              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${retrying === tx.reference ? 'animate-spin' : ''}`} />
+                              {retrying === tx.reference ? 'Retrying…' : 'Retry'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -190,42 +409,74 @@ function PaystackTab() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {filtered.length === 0 ? (
+            {paystackTransactions.length === 0 ? (
               <div className="py-10 text-center text-muted-foreground text-sm">No transactions found</div>
             ) : (
-              filtered.map((tx: any) => (
-                <div key={tx._id || tx.reference} className="rounded-lg border p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs text-muted-foreground truncate">{tx.reference}</span>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${statusColor(tx.status)}`}>
-                      {tx.status}
-                    </span>
+              paystackTransactions.map((tx: any) => {
+                const customer = tx.customerId as any;
+                return (
+                  <div
+                    key={tx._id || tx.reference}
+                    className="rounded-lg border p-3 space-y-2 cursor-pointer hover:bg-muted/30 active:bg-muted/50 transition-colors"
+                    onClick={() => setSelectedTx(tx)}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-xs text-muted-foreground truncate">{tx.reference}</span>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium shrink-0 ${statusColor(tx.status)}`}>
+                        {tx.status}
+                      </span>
+                    </div>
+                    {customer?.name && (
+                      <p className="text-xs font-medium">{customer.name}</p>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{typeLabel(tx.type)}</span>
+                      <span className="font-semibold text-sm">₦{(tx.amount || 0).toLocaleString()}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{fmt(tx.createdAt)}</p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">{typeLabel(tx.type)}</span>
-                    <span className="font-semibold">₦{(tx.amount || 0).toLocaleString()}</span>
-                  </div>
-                  {tx.createdAt && (
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(tx.createdAt), 'dd MMM yyyy, HH:mm')}
-                    </p>
-                  )}
-                  {(tx.status === 'pending' || (tx.status === 'paid' && !tx.webhookProcessed)) && (
-                    <button
-                      onClick={() => handleRetry(tx.reference)}
-                      disabled={retrying === tx.reference}
-                      className="flex items-center gap-1 text-xs text-blue-600 disabled:opacity-50"
-                    >
-                      <RefreshCw className={`h-3 w-3 ${retrying === tx.reference ? 'animate-spin' : ''}`} />
-                      {retrying === tx.reference ? 'Retrying…' : 'Retry transaction'}
-                    </button>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p - 1)}
+                disabled={page <= 1}
+                className="h-8 gap-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= totalPages}
+                className="h-8 gap-1"
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
         </>
       )}
+
+      <TransactionDetailModal
+        tx={selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onRetry={handleRetry}
+        retrying={retrying}
+      />
     </div>
   );
 }
@@ -265,7 +516,6 @@ export default function PaymentsPage() {
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 
   const failedCount = paymentList.filter((p) => p.state === 'failed').length;
-
   const paystackPendingCount = paystackStats?.pendingCount || 0;
 
   return (
@@ -320,7 +570,7 @@ export default function PaymentsPage() {
             <div className="text-xl sm:text-2xl font-bold text-green-600">
               ₦{(paystackStats?.totalRevenue || 0).toLocaleString()}
             </div>
-            <p className="text-xs text-muted-foreground">{paystackTransactions?.length || 0} transactions</p>
+            <p className="text-xs text-muted-foreground">{paystackTransactions?.length || 0} loaded</p>
           </CardContent>
         </Card>
       </div>

@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { ColumnDef } from '@tanstack/react-table';
-import { Plus, Minus, ArrowRightLeft } from 'lucide-react';
+import { Plus, Minus, ArrowRightLeft, Wallet } from 'lucide-react';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Badge } from '@/components/ui/badge';
 import { useLoyaltyStore } from '@/stores/useLoyaltyStore';
@@ -54,10 +54,15 @@ export function LoyaltyLedgerTab() {
       cell: ({ row }) => {
         const type = String(row.original.type ?? '').toUpperCase();
         const typeConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive'; icon: React.ReactNode }> = {
-          EARNED: { label: 'Earned', variant: 'default', icon: <Plus className="h-3 w-3" /> },
-          REDEEMED: { label: 'Redeemed', variant: 'secondary', icon: <Minus className="h-3 w-3" /> },
-          ADJUSTED: { label: 'Adjusted', variant: 'outline', icon: <ArrowRightLeft className="h-3 w-3" /> },
-          EXPIRED: { label: 'Expired', variant: 'destructive', icon: <Minus className="h-3 w-3" /> },
+          EARN:     { label: 'Earned',    variant: 'default',     icon: <Plus className="h-3 w-3" /> },
+          EARNED:   { label: 'Earned',    variant: 'default',     icon: <Plus className="h-3 w-3" /> },
+          REDEEM:   { label: 'Redeemed',  variant: 'secondary',   icon: <Minus className="h-3 w-3" /> },
+          REDEEMED: { label: 'Redeemed',  variant: 'secondary',   icon: <Minus className="h-3 w-3" /> },
+          ADJUST:   { label: 'Adjusted',  variant: 'outline',     icon: <ArrowRightLeft className="h-3 w-3" /> },
+          ADJUSTED: { label: 'Adjusted',  variant: 'outline',     icon: <ArrowRightLeft className="h-3 w-3" /> },
+          CONVERT:  { label: 'Converted', variant: 'secondary',   icon: <Wallet className="h-3 w-3" /> },
+          REVERSAL: { label: 'Reversal',  variant: 'destructive', icon: <Minus className="h-3 w-3" /> },
+          EXPIRED:  { label: 'Expired',   variant: 'destructive', icon: <Minus className="h-3 w-3" /> },
         };
         const config = typeConfig[type] ?? { label: type || 'Unknown', variant: 'outline' as const, icon: null };
         return (
@@ -76,7 +81,7 @@ export function LoyaltyLedgerTab() {
       cell: ({ row }) => {
         const points = row.original.points;
         const type = String(row.original.type ?? '').toUpperCase();
-        const isPositive = type === 'EARNED' || (type === 'ADJUSTED' && points > 0);
+        const isPositive = ['EARN', 'EARNED'].includes(type) || (['ADJUST', 'ADJUSTED'].includes(type) && points > 0);
         return (
           <div className={`font-medium ${isPositive ? 'text-green-600' : 'text-red-600'}`}>
             {isPositive ? '+' : ''}{points.toLocaleString()}

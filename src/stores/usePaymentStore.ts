@@ -59,6 +59,7 @@ interface PaymentState {
   isLoadingPaystack: boolean;
   paystackPage: number;
   paystackHasMore: boolean;
+  paystackPagination: { total: number; page: number; pages: number } | null;
 
   // Actions
   fetchPayments: () => Promise<void>;
@@ -103,6 +104,7 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
   isLoadingPaystack: false,
   paystackPage: 1,
   paystackHasMore: false,
+  paystackPagination: null,
 
   // Fetch payments (resets to page 1)
   fetchPayments: async () => {
@@ -305,8 +307,11 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
         set({
           paystackTransactions: transactions || [],
           paystackStats: stats || { totalRevenue: 0, pendingCount: 0, failedCount: 0 },
-          paystackPage: 1,
+          paystackPage: pagination?.page ?? 1,
           paystackHasMore: pagination ? pagination.page < pagination.pages : false,
+          paystackPagination: pagination
+            ? { total: pagination.total, page: pagination.page, pages: pagination.pages }
+            : null,
           isLoadingPaystack: false,
         });
       }
