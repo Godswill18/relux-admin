@@ -7,6 +7,7 @@ import { useOrderStore } from '@/stores/useOrderStore';
 import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useLoyaltyStore } from '@/stores/useLoyaltyStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useNotificationStore, playNotificationSound } from '@/stores/useNotificationStore';
 import { toast } from 'sonner';
 
 /**
@@ -75,12 +76,33 @@ export const initializeSocketListeners = () => {
     toast.success(`You earned ₦${data.amount?.toLocaleString()} for referring ${data.refereeName}!`);
   });
 
-  // New notifications
+  // New notifications — persist in store + sound + toast
   socket.on('notification:new', (notification: any) => {
     console.log('🔔 New notification:', notification);
-    toast.info(notification.title, {
-      description: notification.body,
+
+    const notifType: string = notification.type ?? '';
+    const isAlert = ['order_created', 'order_cancelled'].includes(notifType);
+    const isWarning = notifType === 'shift_ending_soon';
+
+    playNotificationSound(isAlert ? 'alert' : isWarning ? 'warning' : 'info');
+
+    useNotificationStore.getState().addNotification({
+      _id: notification._id ?? String(Date.now()),
+      type: notification.type,
+      title: notification.title,
+      body: notification.body,
+      metadata: notification.metadata,
+      readAt: null,
+      createdAt: notification.createdAt ?? new Date().toISOString(),
     });
+
+    if (isAlert) {
+      toast.warning(notification.title, { description: notification.body });
+    } else if (isWarning) {
+      toast.warning(notification.title, { description: notification.body });
+    } else {
+      toast.info(notification.title, { description: notification.body });
+    }
   });
 
   // Payment status updates
@@ -114,6 +136,9 @@ export const initializeSocketListeners = () => {
       description: data.reason,
     });
   });
+
+  // Fetch initial notification list
+  useNotificationStore.getState().fetchNotifications();
 
   console.log('All Socket.io listeners initialized successfully');
 };

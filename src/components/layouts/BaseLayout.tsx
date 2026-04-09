@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 // ============================================================================
 // TYPES
@@ -224,6 +225,9 @@ export function BaseLayout({
 
             {/* Header Actions */}
             <div className="flex items-center space-x-2">
+              {/* Notification Bell */}
+              <NotificationBell />
+
               {/* Theme Toggle */}
               <Button variant="ghost" size="icon" onClick={toggleTheme}>
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
