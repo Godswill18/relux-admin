@@ -32,6 +32,11 @@ export interface AttendanceRecord {
   status: 'present' | 'late' | 'absent';
   autoClockOut: boolean;
   ipAddress?: string;
+  geoLat?: number;
+  geoLng?: number;
+  geoAccuracy?: number;
+  distanceFromLocation?: number;
+  geofenceValid?: boolean;
   createdAt: string;
   updatedAt: string;
 }

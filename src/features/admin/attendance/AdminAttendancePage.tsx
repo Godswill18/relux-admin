@@ -11,6 +11,9 @@ import {
   CheckCircle,
   RefreshCw,
   Edit,
+  MapPin,
+  ShieldCheck,
+  ShieldX,
 } from 'lucide-react';
 import { format, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
@@ -240,6 +243,28 @@ function buildColumns(onEdit: (record: AttendanceRecord) => void): ColumnDef<Att
         ),
     },
     {
+      id: 'geofence',
+      header: () => <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />Location</span>,
+      cell: ({ row }) => {
+        const { geofenceValid, distanceFromLocation } = row.original;
+        if (geofenceValid === undefined || geofenceValid === null) {
+          return <span className="text-muted-foreground text-xs">—</span>;
+        }
+        return (
+          <div className="flex items-center gap-1">
+            {geofenceValid ? (
+              <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+            ) : (
+              <ShieldX className="h-3.5 w-3.5 text-destructive" />
+            )}
+            <span className={`text-xs ${geofenceValid ? 'text-green-600' : 'text-destructive'}`}>
+              {distanceFromLocation != null ? `${distanceFromLocation} m` : geofenceValid ? 'OK' : 'Outside'}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
       id: 'actions',
       cell: ({ row }) => (
         <Button variant="ghost" size="sm" onClick={() => onEdit(row.original)}>
@@ -274,6 +299,18 @@ function AttendanceMobileCard({
               <StatusBadge status={record.status} />
               {record.autoClockOut && (
                 <Badge variant="destructive" className="text-xs">Auto</Badge>
+              )}
+              {record.geofenceValid === true && (
+                <Badge variant="outline" className="text-xs gap-1 border-green-400 text-green-600">
+                  <ShieldCheck className="h-3 w-3" />
+                  {record.distanceFromLocation != null ? `${record.distanceFromLocation} m` : 'In Range'}
+                </Badge>
+              )}
+              {record.geofenceValid === false && (
+                <Badge variant="outline" className="text-xs gap-1 border-destructive text-destructive">
+                  <ShieldX className="h-3 w-3" />
+                  Outside Range
+                </Badge>
               )}
             </div>
             <div>

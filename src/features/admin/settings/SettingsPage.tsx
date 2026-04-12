@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Save, Shield, Timer, Loader2 } from 'lucide-react';
+import { Save, Shield, Timer, Loader2, MapPin } from 'lucide-react';
 import { RolesPermissionsTab } from './tabs/RolesPermissionsTab';
+import { WorkLocationTab } from './tabs/WorkLocationTab';
 import { useTimerStore } from '@/stores/useTimerStore';
 import { toast } from 'sonner';
 
@@ -81,6 +82,10 @@ export default function SettingsPage() {
             <TabsTrigger value="timers" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
               <Timer className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
               Stage Timers
+            </TabsTrigger>
+            <TabsTrigger value="location" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
+              <MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+              Work Location
             </TabsTrigger>
           </TabsList>
         </div>
@@ -315,6 +320,11 @@ export default function SettingsPage() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Work Location / Geo-Fence ─────────────────────────────────── */}
+        <TabsContent value="location">
+          <WorkLocationTab />
         </TabsContent>
       </Tabs>
     </div>

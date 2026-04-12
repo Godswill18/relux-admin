@@ -8,10 +8,23 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
-import { Clock, Calendar as CalendarIcon, LogIn, LogOut, History } from 'lucide-react';
+import {
+  Clock,
+  Calendar as CalendarIcon,
+  LogIn,
+  LogOut,
+  History,
+  MapPin,
+  Loader2,
+  ShieldCheck,
+  ShieldX,
+  Navigation,
+  AlertTriangle,
+} from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import { toast } from 'sonner';
 import { format, formatDuration, intervalToDuration, startOfMonth, differenceInDays } from 'date-fns';
+import { useGeolocation, GeoPosition } from '@/hooks/useGeolocation';
 
 // ============================================================================
 // HELPERS
@@ -19,10 +32,7 @@ import { format, formatDuration, intervalToDuration, startOfMonth, differenceInD
 
 function hoursWorked(clockIn: string, clockOut: string | null): string {
   if (!clockOut) return 'Ongoing';
-  const duration = intervalToDuration({
-    start: new Date(clockIn),
-    end: new Date(clockOut),
-  });
+  const duration = intervalToDuration({ start: new Date(clockIn), end: new Date(clockOut) });
   return formatDuration(duration, { format: ['hours', 'minutes'] }) || '< 1 min';
 }
 
@@ -39,10 +49,74 @@ function shiftTimeRange(shift: any): string {
   const to12h = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     const suffix = h >= 12 ? 'PM' : 'AM';
-    const hour   = h % 12 || 12;
+    const hour = h % 12 || 12;
     return `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
   };
   return `${to12h(shift.startTime)} – ${to12h(shift.endTime)}`;
+}
+
+// ============================================================================
+// LOCATION STATUS BADGE
+// ============================================================================
+
+type LocationState =
+  | { status: 'idle' }
+  | { status: 'requesting' }
+  | { status: 'acquired'; position: GeoPosition }
+  | { status: 'error'; message: string };
+
+function LocationStatusCard({ state }: { state: LocationState }) {
+  if (state.status === 'idle') return null;
+
+  if (state.status === 'requesting') {
+    return (
+      <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-400">
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+        <span>Getting your GPS location…</span>
+      </div>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold">Location Error</p>
+          <p className="text-xs mt-0.5 opacity-80">{state.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === 'acquired') {
+    const acc = state.position.accuracy;
+    const isGoodAccuracy = acc <= 50;
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-lg border p-3 text-sm ${
+          isGoodAccuracy
+            ? 'border-green-200 bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400'
+            : 'border-amber-200 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400'
+        }`}
+      >
+        <Navigation className="h-4 w-4 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="font-medium">Location acquired</p>
+          <p className="text-xs opacity-70">
+            {state.position.lat.toFixed(6)}, {state.position.lng.toFixed(6)} · Accuracy: ±{Math.round(acc)} m
+          </p>
+        </div>
+        {isGoodAccuracy ? (
+          <ShieldCheck className="h-4 w-4 shrink-0" />
+        ) : (
+          <ShieldX className="h-4 w-4 shrink-0" />
+        )}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // ============================================================================
@@ -50,41 +124,38 @@ function shiftTimeRange(shift: any): string {
 // ============================================================================
 
 export default function StaffAttendancePage() {
-  const [todayRecord, setTodayRecord]   = useState<any>(null);
-  const [history, setHistory]           = useState<any[]>([]);
-  const [shifts, setShifts]             = useState<any[]>([]);
-  const [pageLoading, setPageLoading]   = useState(true);
+  const [todayRecord, setTodayRecord]     = useState<any>(null);
+  const [history, setHistory]             = useState<any[]>([]);
+  const [shifts, setShifts]               = useState<any[]>([]);
+  const [pageLoading, setPageLoading]     = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [locationState, setLocationState] = useState<LocationState>({ status: 'idle' });
+
+  const { getLocation } = useGeolocation();
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     try {
-      // Fetch from start of current month so the calendar shows full-month coverage.
-      // Backend now filters endDate >= startDate param (so ongoing multi-day shifts
-      // that started earlier are still returned).
       const monthStart = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-
       const [attRes, shiftRes] = await Promise.all([
         apiClient.get('/attendance/me', { params: { limit: 10 } }),
         apiClient.get('/staff/shifts/me', { params: { startDate: monthStart } }),
       ]);
 
-      // Attendance
       const records: any[] = attRes.data.data?.attendance ?? attRes.data.data ?? [];
       const today = new Date();
       const todays = records.find((r: any) => isSameDay(new Date(r.clockInAt), today));
       setTodayRecord(todays ?? null);
       setHistory(records.filter((r: any) => !isSameDay(new Date(r.clockInAt), today)));
 
-      // Shifts: sort ascending so the nearest upcoming shift comes first
       const rawShifts: any[] = shiftRes.data.data?.shifts ?? shiftRes.data.data ?? [];
-      const sorted = [...rawShifts].sort((a, b) => {
-        const dateCmp = (a.startDate ?? '').localeCompare(b.startDate ?? '');
-        if (dateCmp !== 0) return dateCmp;
-        return (a.startTime ?? '').localeCompare(b.startTime ?? '');
-      });
-      setShifts(sorted);
+      setShifts(
+        [...rawShifts].sort((a, b) => {
+          const d = (a.startDate ?? '').localeCompare(b.startDate ?? '');
+          return d !== 0 ? d : (a.startTime ?? '').localeCompare(b.startTime ?? '');
+        })
+      );
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to load attendance data');
     } finally {
@@ -92,38 +163,98 @@ export default function StaffAttendancePage() {
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Clock actions ─────────────────────────────────────────────────────────
+  // ── GPS helper — request + validate ──────────────────────────────────────
+
+  const acquireLocation = async (): Promise<GeoPosition | null> => {
+    setLocationState({ status: 'requesting' });
+    const result = await getLocation();
+
+    if (result.error || !result.position) {
+      setLocationState({ status: 'error', message: result.errorMessage ?? 'Could not get location.' });
+      return null;
+    }
+
+    setLocationState({ status: 'acquired', position: result.position });
+    return result.position;
+  };
+
+  // ── Clock In ──────────────────────────────────────────────────────────────
 
   const handleClockIn = async () => {
+    setActionLoading(true);
     try {
-      setActionLoading(true);
-      const res = await apiClient.post('/attendance/clock-in');
+      const position = await acquireLocation();
+      if (!position) {
+        // Error already shown via locationState
+        return;
+      }
+
+      const res = await apiClient.post('/attendance/clock-in', {
+        geoLat: position.lat,
+        geoLng: position.lng,
+        geoAccuracy: position.accuracy,
+      });
+
       if (res.data.success) {
         setTodayRecord(res.data.data.attendance);
-        toast.success('Clocked in successfully!');
+        const dist = res.data.data.distance;
+        toast.success(
+          dist != null
+            ? `Clocked in — ${dist} m from office`
+            : 'Clocked in successfully!'
+        );
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to clock in');
+      const code = err?.response?.data?.error?.code;
+      const msg  = err?.response?.data?.message || err?.response?.data?.error?.message || 'Failed to clock in';
+      if (code === 'GEOFENCE_VIOLATION') {
+        toast.error(msg, { duration: 6000 });
+        // Keep locationState showing the acquired position so distance is visible
+      } else {
+        toast.error(msg);
+        setLocationState({ status: 'idle' });
+      }
     } finally {
       setActionLoading(false);
     }
   };
 
+  // ── Clock Out ─────────────────────────────────────────────────────────────
+
   const handleClockOut = async () => {
+    setActionLoading(true);
     try {
-      setActionLoading(true);
-      const res = await apiClient.put('/attendance/clock-out');
+      const position = await acquireLocation();
+      if (!position) return;
+
+      const res = await apiClient.put('/attendance/clock-out', {
+        geoLat: position.lat,
+        geoLng: position.lng,
+        geoAccuracy: position.accuracy,
+      });
+
       if (res.data.success) {
         setTodayRecord(res.data.data.attendance);
-        toast.success('Clocked out successfully!');
+        const dist = res.data.data.distance;
+        toast.success(
+          dist != null
+            ? `Clocked out — ${dist} m from office`
+            : 'Clocked out successfully!'
+        );
         await loadData();
+        setLocationState({ status: 'idle' });
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to clock out');
+      const code = err?.response?.data?.error?.code;
+      const msg  = err?.response?.data?.message || err?.response?.data?.error?.message || 'Failed to clock out';
+      if (code === 'GEOFENCE_VIOLATION') {
+        toast.error(msg, { duration: 6000 });
+      } else {
+        toast.error(msg);
+        setLocationState({ status: 'idle' });
+      }
     } finally {
       setActionLoading(false);
     }
@@ -134,15 +265,13 @@ export default function StaffAttendancePage() {
   const today    = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  // Classify each shift relative to today for display
   const classifyShift = (s: any): 'today' | 'upcoming' | 'past' => {
     if (s.startDate <= todayStr && s.endDate >= todayStr) return 'today';
     if (s.startDate > todayStr) return 'upcoming';
     return 'past';
   };
 
-  // All shifts sorted ascending — used for the full schedule list
-  const scheduleShifts = shifts.filter((s: any) => s.endDate >= todayStr); // hide fully-past shifts
+  const scheduleShifts = shifts.filter((s: any) => s.endDate >= todayStr);
 
   // ── Loading skeleton ──────────────────────────────────────────────────────
 
@@ -164,9 +293,7 @@ export default function StaffAttendancePage() {
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold">Attendance</h1>
-        <p className="text-muted-foreground">
-          {format(today, 'EEEE, MMMM dd, yyyy')}
-        </p>
+        <p className="text-muted-foreground">{format(today, 'EEEE, MMMM dd, yyyy')}</p>
       </div>
 
       {/* ── Clock In / Out ─────────────────────────────────────────────────── */}
@@ -176,8 +303,15 @@ export default function StaffAttendancePage() {
             <Clock className="h-5 w-5 text-primary" />
             Today's Attendance
           </CardTitle>
+          <CardDescription className="flex items-center gap-1.5 text-xs">
+            <MapPin className="h-3 w-3" />
+            Your GPS location is verified before each clock action
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Location status */}
+          <LocationStatusCard state={locationState} />
+
           {!todayRecord ? (
             /* Not yet clocked in */
             <div className="flex flex-col items-center gap-4 py-8 text-center">
@@ -187,12 +321,16 @@ export default function StaffAttendancePage() {
               <div>
                 <h3 className="text-lg font-semibold">Not Clocked In</h3>
                 <p className="text-sm text-muted-foreground">
-                  Start your shift by clocking in
+                  You must be within the allowed work location to clock in
                 </p>
               </div>
-              <Button onClick={handleClockIn} disabled={actionLoading} size="lg">
-                <LogIn className="mr-2 h-5 w-5" />
-                Clock In
+              <Button onClick={handleClockIn} disabled={actionLoading} size="lg" className="gap-2">
+                {actionLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <LogIn className="h-5 w-5" />
+                )}
+                {actionLoading ? 'Verifying location…' : 'Clock In'}
               </Button>
             </div>
           ) : (
@@ -208,9 +346,22 @@ export default function StaffAttendancePage() {
                     <p className="text-sm text-muted-foreground">
                       {format(new Date(todayRecord.clockInAt), 'hh:mm a')}
                     </p>
+                    {todayRecord.distanceFromLocation != null && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                        <MapPin className="h-3 w-3" />
+                        {todayRecord.distanceFromLocation} m from office
+                      </p>
+                    )}
                   </div>
                 </div>
-                <Badge variant="default">Present</Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge variant="default">Present</Badge>
+                  {todayRecord.geofenceValid === true && (
+                    <Badge variant="outline" className="text-xs gap-1 border-green-400 text-green-600">
+                      <ShieldCheck className="h-3 w-3" /> Verified
+                    </Badge>
+                  )}
+                </div>
               </div>
 
               {isClockedOut ? (
@@ -240,11 +391,15 @@ export default function StaffAttendancePage() {
                   onClick={handleClockOut}
                   disabled={actionLoading}
                   variant="destructive"
-                  className="w-full"
+                  className="w-full gap-2"
                   size="lg"
                 >
-                  <LogOut className="mr-2 h-5 w-5" />
-                  Clock Out
+                  {actionLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <LogOut className="h-5 w-5" />
+                  )}
+                  {actionLoading ? 'Verifying location…' : 'Clock Out'}
                 </Button>
               )}
             </div>
@@ -252,7 +407,7 @@ export default function StaffAttendancePage() {
         </CardContent>
       </Card>
 
-      {/* ── Shift Schedule (detailed list) ────────────────────────────────── */}
+      {/* ── Shift Schedule ────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -286,15 +441,11 @@ export default function StaffAttendancePage() {
                   <div
                     key={shift._id ?? i}
                     className={`rounded-lg border px-4 py-3 ${
-                      kind === 'today'
-                        ? 'border-primary bg-primary/5'
-                        : 'bg-card'
+                      kind === 'today' ? 'border-primary bg-primary/5' : 'bg-card'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      {/* Left: date + time */}
                       <div className="space-y-1 min-w-0">
-                        {/* Date row */}
                         <div className="flex items-center gap-2 flex-wrap">
                           {kind === 'today' && (
                             <span className="inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground uppercase tracking-wide">
@@ -310,8 +461,6 @@ export default function StaffAttendancePage() {
                               : ''}
                           </p>
                         </div>
-
-                        {/* Time row */}
                         <p className="text-sm text-muted-foreground flex items-center gap-1">
                           <Clock className="h-3.5 w-3.5 shrink-0" />
                           {shiftTimeRange(shift)}
@@ -321,27 +470,19 @@ export default function StaffAttendancePage() {
                             </span>
                           )}
                         </p>
-
-                        {/* Notes */}
                         {shift.notes && (
                           <p className="text-xs text-muted-foreground italic truncate max-w-xs">
                             {shift.notes}
                           </p>
                         )}
                       </div>
-
-                      {/* Right: badges */}
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <Badge variant="outline" className="capitalize text-xs">
                           {shift.shiftType ?? 'custom'}
                         </Badge>
                         {shift.status && (
                           <Badge
-                            variant={
-                              kind === 'today' && shift.status === 'in-progress'
-                                ? 'default'
-                                : 'secondary'
-                            }
+                            variant={kind === 'today' && shift.status === 'in-progress' ? 'default' : 'secondary'}
                             className="capitalize text-xs"
                           >
                             {shift.status}
@@ -392,14 +533,27 @@ export default function StaffAttendancePage() {
                         {record.clockOutAt &&
                           ` · Out: ${format(new Date(record.clockOutAt), 'hh:mm a')}`}
                       </p>
+                      {record.distanceFromLocation != null && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {record.distanceFromLocation} m from office
+                        </p>
+                      )}
                     </div>
-                    <div className="text-right">
+                    <div className="text-right space-y-1">
                       {record.clockOutAt ? (
                         <Badge variant="secondary">
                           {hoursWorked(record.clockInAt, record.clockOutAt)}
                         </Badge>
                       ) : (
                         <Badge variant="destructive">No clock-out</Badge>
+                      )}
+                      {record.geofenceValid === true && (
+                        <div className="flex justify-end">
+                          <Badge variant="outline" className="text-[10px] gap-0.5 border-green-400 text-green-600">
+                            <ShieldCheck className="h-2.5 w-2.5" /> Verified
+                          </Badge>
+                        </div>
                       )}
                     </div>
                   </div>
