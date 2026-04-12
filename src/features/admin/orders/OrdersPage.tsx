@@ -20,6 +20,7 @@ import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
+import { SwipeableCard } from '@/components/shared/SwipeableCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -63,6 +64,31 @@ const STATUS_TABS: {
   { key: 'completed',        label: 'Completed',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { key: 'cancelled',        label: 'Cancelled',        icon: <XCircle className="h-3.5 w-3.5" /> },
 ];
+
+// ── Status progression maps for swipe gestures ──────────────────────────────
+const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = {
+  'pending':          'confirmed',
+  'confirmed':        'picked-up',
+  'picked-up':        'in_progress',
+  'in_progress':      'washing',
+  'washing':          'ironing',
+  'ironing':          'ready',
+  'ready':            'out-for-delivery',
+  'out-for-delivery': 'delivered',
+  'delivered':        'completed',
+};
+
+const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = {
+  'confirmed':        'pending',
+  'picked-up':        'confirmed',
+  'in_progress':      'picked-up',
+  'washing':          'in_progress',
+  'ironing':          'washing',
+  'ready':            'ironing',
+  'out-for-delivery': 'ready',
+  'delivered':        'out-for-delivery',
+  'completed':        'delivered',
+};
 
 // ============================================================================
 // COMPONENT
@@ -195,6 +221,33 @@ export default function OrdersPage() {
       toast.success(`Order ${order.orderNumber} marked as Completed`);
       refresh();
     } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update status');
+    }
+  };
+
+  const handleSwipeStatus = async (order: any, newStatus: StatusKey) => {
+    const originalStatus = order.status as StatusKey;
+    const label = newStatus.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    // Optimistic: update badge + counts immediately
+    setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: newStatus } : o));
+    setCounts((prev) => ({
+      ...prev,
+      [originalStatus]: Math.max(0, (prev[originalStatus] ?? 0) - 1),
+      [newStatus]:       (prev[newStatus] ?? 0) + 1,
+    }));
+    try {
+      await apiClient.patch(`/orders/${order._id}/status`, { status: newStatus });
+      toast.success(`Order ${order.orderNumber} → ${label}`);
+      // Remove from current tab — it now belongs to a different status tab
+      setOrders((prev) => prev.filter((o) => o._id !== order._id));
+    } catch (err: any) {
+      // Revert badge + counts
+      setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: originalStatus } : o));
+      setCounts((prev) => ({
+        ...prev,
+        [originalStatus]: (prev[originalStatus] ?? 0) + 1,
+        [newStatus]:       Math.max(0, (prev[newStatus] ?? 0) - 1),
+      }));
       toast.error(err?.response?.data?.message || 'Failed to update status');
     }
   };
@@ -488,7 +541,11 @@ export default function OrdersPage() {
                   </CardContent>
                 </Card>
               ) : (
-                filteredOrders.map((order) => (
+                filteredOrders.map((order) => {
+                  const nextStatus = NEXT_STATUS[order.status as StatusKey];
+                  const prevStatus = PREV_STATUS[order.status as StatusKey];
+                  const isCancelled = order.status === 'cancelled';
+                  return (
                   <AdminMobileCard
                     key={order._id}
                     order={order}
@@ -501,8 +558,13 @@ export default function OrdersPage() {
                     onAssign={() => setAssignTarget(order)}
                     onDelete={() => setDeleteTarget(order)}
                     onMarkCompleted={() => handleMarkCompleted(order)}
+                    onSwipeNext={!isCancelled && nextStatus ? () => handleSwipeStatus(order, nextStatus) : undefined}
+                    onSwipePrev={!isCancelled && prevStatus ? () => handleSwipeStatus(order, prevStatus) : undefined}
+                    nextStatusLabel={nextStatus}
+                    prevStatusLabel={prevStatus}
                   />
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -544,9 +606,13 @@ interface AdminMobileCardProps {
   showComplete?: boolean;
   onView: () => void; onEdit: () => void; onAssign: () => void; onDelete: () => void;
   onMarkCompleted?: () => void;
+  onSwipeNext?: () => void;
+  onSwipePrev?: () => void;
+  nextStatusLabel?: string;
+  prevStatusLabel?: string;
 }
 
-function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, onView, onEdit, onAssign, onDelete, onMarkCompleted }: AdminMobileCardProps) {
+function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, onView, onEdit, onAssign, onDelete, onMarkCompleted, onSwipeNext, onSwipePrev, nextStatusLabel, prevStatusLabel }: AdminMobileCardProps) {
   const isWalkIn     = order.orderSource === 'offline';
   const customerName = order.customer?.name || order.walkInCustomer?.name || '—';
   const items: any[] = order.items || [];
@@ -555,6 +621,13 @@ function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, o
   const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
 
   return (
+    <SwipeableCard
+      onSwipeRight={onSwipeNext}
+      onSwipeLeft={onSwipePrev}
+      rightLabel={nextStatusLabel}
+      leftLabel={prevStatusLabel}
+      disabled={order.status === 'cancelled'}
+    >
     <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={onView}>
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2">
@@ -643,6 +716,7 @@ function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, o
         )}
       </CardContent>
     </Card>
+    </SwipeableCard>
   );
 }
 

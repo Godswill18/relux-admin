@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { SwipeableCard } from '@/components/shared/SwipeableCard';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { UpdateStatusModal } from './UpdateStatusModal';
@@ -90,6 +91,18 @@ const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = {
   'ready':            'out-for-delivery',
   'out-for-delivery': 'delivered',
   'delivered':        'completed',
+};
+
+// Staff prev-status: confirmed is the floor (cannot go back to pending / unassign)
+const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = {
+  'picked-up':        'confirmed',
+  'in_progress':      'picked-up',
+  'washing':          'in_progress',
+  'ironing':          'washing',
+  'ready':            'ironing',
+  'out-for-delivery': 'ready',
+  'delivered':        'out-for-delivery',
+  'completed':        'delivered',
 };
 
 const NEXT_STATUS_LABEL: Partial<Record<StatusKey, string>> = {
@@ -285,6 +298,34 @@ export default function StaffOrdersPage() {
       toast.success(`Order moved to ${next.replace(/-/g, ' ')}`);
       refresh();
     } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Failed to update status');
+    }
+  };
+
+  // ── Swipe status (optimistic, revert on failure) ─────────────────────────
+  const handleSwipeStatus = async (order: any, newStatus: StatusKey) => {
+    const originalStatus = order.status as StatusKey;
+    const label = newStatus.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    // Optimistic: update badge + counts immediately
+    setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: newStatus } : o));
+    setCounts((prev) => ({
+      ...prev,
+      [originalStatus]: Math.max(0, (prev[originalStatus] ?? 0) - 1),
+      [newStatus]:       (prev[newStatus] ?? 0) + 1,
+    }));
+    try {
+      await apiClient.patch(`/orders/${order._id}/status`, { status: newStatus });
+      toast.success(`Order ${order.orderNumber} → ${label}`);
+      // Remove from current tab — it now belongs to a different status tab
+      setOrders((prev) => prev.filter((o) => o._id !== order._id));
+    } catch (err: any) {
+      // Revert badge + counts
+      setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: originalStatus } : o));
+      setCounts((prev) => ({
+        ...prev,
+        [originalStatus]: (prev[originalStatus] ?? 0) + 1,
+        [newStatus]:       Math.max(0, (prev[newStatus] ?? 0) - 1),
+      }));
       toast.error(err?.response?.data?.message || 'Failed to update status');
     }
   };
@@ -580,7 +621,11 @@ export default function StaffOrdersPage() {
                   </CardContent>
                 </Card>
               ) : (
-                filteredOrders.map((order) => (
+                filteredOrders.map((order) => {
+                  const nextStatus = NEXT_STATUS[order.status as StatusKey];
+                  const prevStatus = PREV_STATUS[order.status as StatusKey];
+                  const isCancelled = order.status === 'cancelled';
+                  return (
                   <StaffMobileCard
                     key={order._id}
                     order={order}
@@ -590,8 +635,13 @@ export default function StaffOrdersPage() {
                     onUpdateStatus={() => setStatusTarget(order)}
                     onNextStep={() => handleNextStep(order)}
                     nextLabel={NEXT_STATUS_LABEL[order.status as StatusKey]}
+                    onSwipeNext={!isCancelled && nextStatus ? () => handleSwipeStatus(order, nextStatus) : undefined}
+                    onSwipePrev={!isCancelled && prevStatus ? () => handleSwipeStatus(order, prevStatus) : undefined}
+                    nextStatusLabel={nextStatus}
+                    prevStatusLabel={prevStatus}
                   />
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -685,9 +735,13 @@ interface StaffMobileCardProps {
   onUpdateStatus: () => void;
   onNextStep: () => void;
   nextLabel?: string;
+  onSwipeNext?: () => void;
+  onSwipePrev?: () => void;
+  nextStatusLabel?: string;
+  prevStatusLabel?: string;
 }
 
-function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNextStep, nextLabel }: StaffMobileCardProps) {
+function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNextStep, nextLabel, onSwipeNext, onSwipePrev, nextStatusLabel, prevStatusLabel }: StaffMobileCardProps) {
   const isWalkIn     = order.orderSource === 'offline';
   const name         = customerName(order);
   const items: any[] = order.items ?? [];
@@ -697,6 +751,13 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
   const isReadOnly   = tabKey === 'delivered' || tabKey === 'completed' || tabKey === 'cancelled';
 
   return (
+    <SwipeableCard
+      onSwipeRight={onSwipeNext}
+      onSwipeLeft={onSwipePrev}
+      rightLabel={nextStatusLabel}
+      leftLabel={prevStatusLabel}
+      disabled={order.status === 'cancelled'}
+    >
     <Card className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={onView}>
       <CardContent className="p-4 space-y-3">
         {/* Top: order number + actions */}
@@ -786,5 +847,6 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
         )}
       </CardContent>
     </Card>
+    </SwipeableCard>
   );
 }
