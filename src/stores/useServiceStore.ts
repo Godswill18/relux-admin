@@ -82,6 +82,7 @@ interface ServiceState {
   createService: (data: any) => Promise<void>;
   updateService: (serviceId: string, data: any) => Promise<void>;
   deleteService: (serviceId: string) => Promise<void>;
+  reorderServices: (order: { id: string; position: number }[]) => Promise<void>;
 
   createCategory: (data: any) => Promise<void>;
   updateCategory: (categoryId: string, data: any) => Promise<void>;
@@ -372,6 +373,19 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
       await get().fetchServices();
     } catch (error: any) {
       set({ error: error.response?.data?.message || 'Failed to delete service' });
+      throw error;
+    }
+  },
+
+  reorderServices: async (order) => {
+    try {
+      const response = await apiClient.put('/services/reorder', { order });
+      if (response.data.success) {
+        const raw = response.data.data?.services ?? [];
+        set({ services: raw.map(normalize) });
+      }
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to reorder services' });
       throw error;
     }
   },
