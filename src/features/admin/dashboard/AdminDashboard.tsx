@@ -39,6 +39,7 @@ import {
 import { useOrderStore } from '@/stores/useOrderStore';
 import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useServiceStore } from '@/stores/useServiceStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { ORDER_STATUS_CONFIG, getOrderStatusConfig } from '@/lib/statusConfig';
 
 // ============================================================================
@@ -141,6 +142,8 @@ function OrdersTooltip({ active, payload }: any) {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'admin';
   const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const { fetchServices } = useServiceStore();
@@ -286,7 +289,7 @@ export default function AdminDashboard() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold">{isAdmin ? 'Admin Dashboard' : 'Manager Dashboard'}</h1>
           <p className="text-muted-foreground">Loading dashboard data...</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -312,7 +315,7 @@ export default function AdminDashboard() {
       {/* ------------------------------------------------------------------ */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <h1 className="text-3xl font-bold">{isAdmin ? 'Admin Dashboard' : 'Manager Dashboard'}</h1>
           <p className="text-muted-foreground">
             Welcome back — here's what's happening today
           </p>
@@ -326,14 +329,16 @@ export default function AdminDashboard() {
       {/* ------------------------------------------------------------------ */}
       {/* Metric Cards */}
       {/* ------------------------------------------------------------------ */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
-          title="Total Revenue"
-          value={`₦${totalRevenue.toLocaleString()}`}
-          description="All paid orders"
-          icon={<DollarSign />}
-          accentColor="#10b981"
-        />
+      <div className={`grid gap-4 md:grid-cols-2 ${isAdmin ? 'lg:grid-cols-4' : ''}`}>
+        {isAdmin && (
+          <MetricCard
+            title="Total Revenue"
+            value={`₦${totalRevenue.toLocaleString()}`}
+            description="All paid orders"
+            icon={<DollarSign />}
+            accentColor="#10b981"
+          />
+        )}
         <MetricCard
           title="Active Orders"
           value={activeOrders}
@@ -348,31 +353,35 @@ export default function AdminDashboard() {
           icon={<Users />}
           accentColor="#3b82f6"
         />
-        <MetricCard
-          title="Pending Payments"
-          value={pendingPayments}
-          description="Awaiting payment"
-          icon={<CreditCard />}
-          accentColor="#f59e0b"
-        />
+        {isAdmin && (
+          <MetricCard
+            title="Pending Payments"
+            value={pendingPayments}
+            description="Awaiting payment"
+            icon={<CreditCard />}
+            accentColor="#f59e0b"
+          />
+        )}
       </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Today at a Glance */}
       {/* ------------------------------------------------------------------ */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className={`grid gap-4 ${isAdmin ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
         <Card className="border-l-4 border-l-primary">
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Today's Orders</p>
             <p className="text-3xl font-bold mt-1">{todayOrders.length}</p>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-green-500">
-          <CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Today's Revenue</p>
-            <p className="text-3xl font-bold mt-1">₦{todayRevenue.toLocaleString()}</p>
-          </CardContent>
-        </Card>
+        {isAdmin && (
+          <Card className="border-l-4 border-l-green-500">
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Today's Revenue</p>
+              <p className="text-3xl font-bold mt-1">₦{todayRevenue.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+        )}
         <Card className="border-l-4 border-l-amber-500">
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Orders (All Time)</p>
@@ -384,9 +393,9 @@ export default function AdminDashboard() {
       {/* ------------------------------------------------------------------ */}
       {/* Charts Row 1: Revenue Trend + Orders by Status */}
       {/* ------------------------------------------------------------------ */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Revenue Area Chart */}
-        <Card className="lg:col-span-2">
+      <div className={`grid gap-6 ${isAdmin ? 'lg:grid-cols-3' : ''}`}>
+        {/* Revenue Area Chart — admin only */}
+        {isAdmin && <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
@@ -466,7 +475,7 @@ export default function AdminDashboard() {
               </ResponsiveContainer>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* Orders by Status Donut */}
         <Card>

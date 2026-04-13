@@ -18,7 +18,6 @@ import {
   Clock,
   Wallet,
   MessageSquare,
-  Bell,
   FileText,
   Shield,
   Settings,
@@ -123,12 +122,6 @@ const ALL_ADMIN_NAV: AdminNavItem[] = [
     permission: Permission.VIEW_CHAT,
   },
   {
-    label: 'Notifications',
-    path: '/admin/notifications',
-    icon: <Bell className="h-4 w-4" />,
-    permission: Permission.SEND_NOTIFICATIONS,
-  },
-  {
     label: 'Reports',
     path: '/admin/reports',
     icon: <FileText className="h-4 w-4" />,
@@ -185,7 +178,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <BaseLayout
       navItems={navItems}
-      headerTitle="Admin Dashboard"
+      headerTitle={isAdmin ? 'Admin Dashboard' : 'Manager Dashboard'}
       logoText="Relux Laundry"
     >
       {children}

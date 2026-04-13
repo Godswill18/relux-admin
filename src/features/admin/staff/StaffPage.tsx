@@ -26,7 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useStaffStore } from '@/stores/useStaffStore';
-import { useHasPermission } from '@/stores/useAuthStore';
+import { useHasPermission, useAuthStore } from '@/stores/useAuthStore';
 import { Staff, Permission } from '@/types';
 
 // ============================================================================
@@ -43,7 +43,6 @@ function RoleBadge({ role }: { role: string }) {
   const roleConfig: Record<string, { variant: any; label: string }> = {
     admin: { variant: 'default', label: 'Admin' },
     manager: { variant: 'default', label: 'Manager' },
-    receptionist: { variant: 'secondary', label: 'Receptionist' },
     staff: { variant: 'outline', label: 'Staff' },
   };
 
@@ -57,6 +56,9 @@ function RoleBadge({ role }: { role: string }) {
 
 export default function StaffPage() {
   const { staff, isLoading, fetchStaff, isFetchingMore, hasMore, loadMoreStaff } = useStaffStore();
+  const currentUser = useAuthStore((s) => s.user);
+  const currentUserId = (currentUser as any)?._id || currentUser?.id;
+  const isManager = currentUser?.role === 'manager';
   const canCreate = useHasPermission(Permission.CREATE_STAFF);
   const canEdit = useHasPermission(Permission.EDIT_STAFF);
   const canDelete = useHasPermission(Permission.DELETE_STAFF);
@@ -76,7 +78,13 @@ export default function StaffPage() {
     fetchStaff();
   }, [fetchStaff]);
 
-  const staffList = useMemo(() => Array.isArray(staff) ? staff : [], [staff]);
+  const staffList = useMemo(() =>
+    (Array.isArray(staff) ? staff : []).filter((s) => {
+      if (getStaffId(s) === currentUserId) return false;
+      if (isManager && (s as any).role === 'admin') return false;
+      return true;
+    }),
+  [staff, currentUserId, isManager]);
 
   const filteredStaff = useMemo(() => {
     const q = search.toLowerCase().trim();

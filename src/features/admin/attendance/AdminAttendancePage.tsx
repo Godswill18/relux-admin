@@ -14,6 +14,10 @@ import {
   MapPin,
   ShieldCheck,
   ShieldX,
+  LogIn,
+  LogOut,
+  Loader2,
+  Navigation,
 } from 'lucide-react';
 import { format, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
@@ -21,7 +25,7 @@ import { toast } from 'sonner';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import {
@@ -43,6 +47,9 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 
 import { useAttendanceStore, AttendanceRecord } from '@/stores/useAttendanceStore';
+import { useAuthStore } from '@/stores/useAuthStore';
+import apiClient from '@/lib/api/client';
+import { useGeolocation, GeoPosition } from '@/hooks/useGeolocation';
 
 // ============================================================================
 // HELPERS
@@ -352,10 +359,198 @@ function AttendanceMobileCard({
 }
 
 // ============================================================================
+// MANAGER CLOCK-IN/OUT PANEL
+// ============================================================================
+
+type LocationState =
+  | { status: 'idle' }
+  | { status: 'requesting' }
+  | { status: 'acquired'; position: GeoPosition }
+  | { status: 'error'; message: string };
+
+function isSameDayLocal(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function ManagerClockPanel({ onClockAction }: { onClockAction: () => void }) {
+  const [todayRecord, setTodayRecord]     = useState<any>(null);
+  const [loading, setLoading]             = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [locationState, setLocationState] = useState<LocationState>({ status: 'idle' });
+  const { getLocation } = useGeolocation();
+
+  const loadTodayRecord = useCallback(async () => {
+    try {
+      const res = await apiClient.get('/attendance/me', { params: { limit: 10 } });
+      const records: any[] = res.data.data?.attendance ?? res.data.data ?? [];
+      const today = new Date();
+      const todays = records.find((r: any) => isSameDayLocal(new Date(r.clockInAt), today));
+      setTodayRecord(todays ?? null);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadTodayRecord(); }, [loadTodayRecord]);
+
+  const acquireLocation = async (): Promise<GeoPosition | null> => {
+    setLocationState({ status: 'requesting' });
+    const result = await getLocation();
+    if (result.error || !result.position) {
+      setLocationState({ status: 'error', message: result.errorMessage ?? 'Could not get location.' });
+      return null;
+    }
+    setLocationState({ status: 'acquired', position: result.position });
+    return result.position;
+  };
+
+  const handleClockIn = async () => {
+    setActionLoading(true);
+    try {
+      const position = await acquireLocation();
+      if (!position) return;
+      const res = await apiClient.post('/attendance/clock-in', {
+        geoLat: position.lat,
+        geoLng: position.lng,
+        geoAccuracy: position.accuracy,
+      });
+      if (res.data.success) {
+        setTodayRecord(res.data.data.attendance);
+        const dist = res.data.data.distance;
+        toast.success(dist != null ? `Clocked in — ${dist} m from office` : 'Clocked in successfully!');
+        onClockAction();
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error?.message || 'Failed to clock in';
+      toast.error(msg, { duration: 6000 });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClockOut = async () => {
+    setActionLoading(true);
+    try {
+      const position = await acquireLocation();
+      if (!position) return;
+      const res = await apiClient.put('/attendance/clock-out', {
+        geoLat: position.lat,
+        geoLng: position.lng,
+        geoAccuracy: position.accuracy,
+      });
+      if (res.data.success) {
+        setTodayRecord(res.data.data.attendance);
+        const dist = res.data.data.distance;
+        toast.success(dist != null ? `Clocked out — ${dist} m from office` : 'Clocked out successfully!');
+        setLocationState({ status: 'idle' });
+        onClockAction();
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.response?.data?.error?.message || 'Failed to clock out';
+      toast.error(msg, { duration: 6000 });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading) return <Skeleton className="h-32 w-full" />;
+
+  const isClockedOut = todayRecord?.clockOutAt;
+
+  return (
+    <Card className="border-primary/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clock className="h-5 w-5 text-primary" />
+          Your Attendance
+        </CardTitle>
+        <CardDescription className="flex items-center gap-1.5 text-xs">
+          <MapPin className="h-3 w-3" />
+          GPS location is verified before each clock action
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Location status */}
+        {locationState.status === 'requesting' && (
+          <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-400">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+            <span>Getting your GPS location…</span>
+          </div>
+        )}
+        {locationState.status === 'error' && (
+          <div className="flex items-start gap-3 rounded-lg border border-destructive bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">Location Error</p>
+              <p className="text-xs mt-0.5 opacity-80">{locationState.message}</p>
+            </div>
+          </div>
+        )}
+        {locationState.status === 'acquired' && (
+          <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20 p-3 text-sm text-green-700 dark:text-green-400">
+            <Navigation className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-xs">
+              {locationState.position.lat.toFixed(6)}, {locationState.position.lng.toFixed(6)} · ±{Math.round(locationState.position.accuracy)} m
+            </span>
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+          </div>
+        )}
+
+        {!todayRecord ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Not clocked in today</p>
+              <p className="text-xs text-muted-foreground">{format(new Date(), 'EEEE, MMMM dd, yyyy')}</p>
+            </div>
+            <Button onClick={handleClockIn} disabled={actionLoading} className="gap-2">
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+              {actionLoading ? 'Verifying…' : 'Clock In'}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <Badge variant={isClockedOut ? 'secondary' : 'default'}>
+                  {isClockedOut ? 'Completed' : 'Clocked In'}
+                </Badge>
+                {todayRecord.geofenceValid === true && (
+                  <Badge variant="outline" className="text-xs gap-1 border-green-400 text-green-600">
+                    <ShieldCheck className="h-3 w-3" /> Verified
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                In: {format(new Date(todayRecord.clockInAt), 'hh:mm a')}
+                {todayRecord.clockOutAt && ` · Out: ${format(new Date(todayRecord.clockOutAt), 'hh:mm a')}`}
+              </p>
+            </div>
+            {!isClockedOut && (
+              <Button onClick={handleClockOut} disabled={actionLoading} variant="destructive" className="gap-2">
+                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                {actionLoading ? 'Verifying…' : 'Clock Out'}
+              </Button>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
 // MAIN PAGE
 // ============================================================================
 
 export default function AdminAttendancePage() {
+  const user = useAuthStore((s) => s.user);
+  const isManager = user?.role === 'manager';
   const { records, total, isLoading, fetchAttendance, updateAttendance } = useAttendanceStore();
 
   const [activeTab, setActiveTab]     = useState<'today' | 'history'>('today');
@@ -436,6 +631,11 @@ export default function AdminAttendancePage() {
           Refresh
         </Button>
       </div>
+
+      {/* ── Manager Clock-In/Out ─────────────────────────────────────────── */}
+      {isManager && (
+        <ManagerClockPanel onClockAction={() => activeTab === 'today' ? loadToday() : undefined} />
+      )}
 
       {/* ── Summary Stats ────────────────────────────────────────────────── */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">

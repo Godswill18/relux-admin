@@ -39,7 +39,7 @@ const addStaffSchema = z.object({
   phone: z.string().min(10, 'Phone must be at least 10 digits'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: z.enum(['admin', 'manager', 'staff']),
-  staffRole: z.enum(['receptionist', 'washer', 'delivery']).or(z.literal('')).optional(),
+  staffRole: z.enum(['washer', 'delivery']).or(z.literal('')).optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   dateOfBirth: z.string().optional(),
@@ -244,7 +244,6 @@ export function AddStaffModal({ open, onOpenChange }: AddStaffModalProps) {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="receptionist">Receptionist</SelectItem>
                           <SelectItem value="washer">Washer</SelectItem>
                           <SelectItem value="delivery">Delivery</SelectItem>
                         </SelectContent>

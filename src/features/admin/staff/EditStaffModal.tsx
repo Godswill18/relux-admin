@@ -39,7 +39,7 @@ const editStaffSchema = z.object({
   email: z.string().email('Invalid email').or(z.literal('')).optional(),
   phone: z.string().min(10, 'Phone must be at least 10 digits'),
   role: z.enum(['admin', 'manager', 'staff']),
-  staffRole: z.enum(['receptionist', 'washer', 'delivery']).or(z.literal('')).optional(),
+  staffRole: z.enum(['washer', 'delivery']).or(z.literal('')).optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   dateOfBirth: z.string().optional(),
@@ -235,7 +235,6 @@ export function EditStaffModal({ open, onOpenChange, staff }: EditStaffModalProp
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="receptionist">Receptionist</SelectItem>
                           <SelectItem value="washer">Washer</SelectItem>
                           <SelectItem value="delivery">Delivery</SelectItem>
                         </SelectContent>

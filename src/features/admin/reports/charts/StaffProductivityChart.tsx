@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { useAnalyticsStore } from '@/stores/useAnalyticsStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ function Stat({
 
 // ── Staff card ───────────────────────────────────────────────────────────────
 
-function StaffCard({ s }: { s: any }) {
+function StaffCard({ s, showRevenue }: { s: any; showRevenue: boolean }) {
   const attendanceRate =
     s.shiftsWorked > 0 ? Math.round((s.attendanceCount / s.shiftsWorked) * 100) : 0;
 
@@ -109,10 +110,12 @@ function StaffCard({ s }: { s: any }) {
       </div>
 
       {/* Key stats grid */}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat icon={Package}       label="Assigned"   value={s.orderCount} />
-        <Stat icon={CheckCircle}   label="Completed"  value={s.completedOrders} />
-        <Stat icon={TrendingUp}    label="Revenue"    value={formatCurrency(s.totalRevenue)} />
+      <div className={`grid gap-3 ${showRevenue ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        <Stat icon={Package}     label="Assigned"  value={s.orderCount} />
+        <Stat icon={CheckCircle} label="Completed" value={s.completedOrders} />
+        {showRevenue && (
+          <Stat icon={TrendingUp} label="Revenue" value={formatCurrency(s.totalRevenue)} />
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-3 pt-1 border-t">
@@ -160,6 +163,7 @@ function StaffCard({ s }: { s: any }) {
 
 export function StaffProductivityChart() {
   const { staffProductivity, isLoading, fetchStaffProductivity } = useAnalyticsStore();
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
 
   const [startDate, setStartDate] = useState('');
   const [endDate,   setEndDate]   = useState('');
@@ -177,7 +181,8 @@ export function StaffProductivityChart() {
   const clearDates = () => { setStartDate(''); setEndDate(''); };
   const hasDate = !!(startDate || endDate);
 
-  const data = Array.isArray(staffProductivity) ? staffProductivity : [];
+  const rawData = Array.isArray(staffProductivity) ? staffProductivity : [];
+  const data = isAdmin ? rawData : rawData.filter((s: any) => s.role !== 'admin');
 
   // Summary totals
   const totals = data.reduce(
@@ -234,15 +239,17 @@ export function StaffProductivityChart() {
 
       {/* Summary bar */}
       {data.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-muted/40 rounded-lg text-sm">
+        <div className={`grid gap-3 p-3 bg-muted/40 rounded-lg text-sm ${isAdmin ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3'}`}>
           <div className="text-center">
             <p className="text-muted-foreground text-xs">Total Orders</p>
             <p className="font-bold text-base">{totals.orders}</p>
           </div>
-          <div className="text-center">
-            <p className="text-muted-foreground text-xs">Total Revenue</p>
-            <p className="font-bold text-base">{formatCurrency(totals.revenue)}</p>
-          </div>
+          {isAdmin && (
+            <div className="text-center">
+              <p className="text-muted-foreground text-xs">Total Revenue</p>
+              <p className="font-bold text-base">{formatCurrency(totals.revenue)}</p>
+            </div>
+          )}
           <div className="text-center">
             <p className="text-muted-foreground text-xs">Status Updates</p>
             <p className="font-bold text-base">{totals.updates}</p>
@@ -273,7 +280,7 @@ export function StaffProductivityChart() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.map((s: any) => (
-            <StaffCard key={s._id} s={s} />
+            <StaffCard key={s._id} s={s} showRevenue={isAdmin} />
           ))}
         </div>
       )}

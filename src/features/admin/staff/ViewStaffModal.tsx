@@ -69,7 +69,6 @@ export function ViewStaffModal({ open, onOpenChange, staff }: ViewStaffModalProp
   const staffRoleLabel = (sr?: string) => {
     if (!sr) return '—';
     const map: Record<string, string> = {
-      receptionist: 'Receptionist',
       washer: 'Washer',
       delivery: 'Delivery',
     };

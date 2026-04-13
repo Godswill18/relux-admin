@@ -29,7 +29,6 @@ import StaffPage from '@/features/admin/staff/StaffPage';
 import ShiftsPage from '@/features/admin/shifts/ShiftsPage';
 import PayrollPage from '@/features/admin/payroll/PayrollPage';
 import ChatPage from '@/features/admin/chat/ChatPage';
-import NotificationsPage from '@/features/admin/notifications/NotificationsPage';
 import ReportsPage from '@/features/admin/reports/ReportsPage';
 import AuditPage from '@/features/admin/audit/AuditPage';
 import SettingsPage from '@/features/admin/settings/SettingsPage';
@@ -238,14 +237,6 @@ const App = () => (
               element={
                 <ProtectedRoute requiredPermissions={[Permission.VIEW_CHAT]}>
                   <ChatPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="notifications"
-              element={
-                <ProtectedRoute requiredPermissions={[Permission.SEND_NOTIFICATIONS]}>
-                  <NotificationsPage />
                 </ProtectedRoute>
               }
             />
