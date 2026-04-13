@@ -40,6 +40,9 @@ import StaffAttendancePage from '@/features/staff/attendance/StaffAttendancePage
 import StaffChatPage from '@/features/staff/chat/StaffChatPage';
 import StaffProfilePage from '@/features/staff/profile/StaffProfilePage';
 import StaffPerformancePage from '@/features/staff/performance/StaffPerformancePage';
+import { DeliveryLayout } from '@/components/layouts/DeliveryLayout';
+import DeliveryDashboard from '@/features/delivery/dashboard/DeliveryDashboard';
+import DeliveryOrdersPage from '@/features/delivery/orders/DeliveryOrdersPage';
 import { Permission, Role } from '@/types';
 import { useAuthStore } from '@/stores/useAuthStore';
 
@@ -59,6 +62,10 @@ function RootRedirect() {
 
   if (roleString === 'STAFF' || roleString === Role.STAFF) {
     return <Navigate to="/staff" replace />;
+  }
+
+  if (roleString === 'DELIVERY' || roleString === Role.DELIVERY) {
+    return <Navigate to="/delivery" replace />;
   }
 
   // Default to admin for ADMIN, MANAGER, RECEPTIONIST
@@ -343,6 +350,39 @@ const App = () => (
               path="profile"
               element={<StaffProfilePage />}
             />
+          </Route>
+
+          {/* ===================================================================
+              DELIVERY ROUTES — Layout mounts ONCE; page content swaps via Outlet
+          =================================================================== */}
+          <Route
+            path="/delivery"
+            element={
+              <ProtectedRoute>
+                <DeliveryLayout>
+                  <Outlet />
+                </DeliveryLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DeliveryDashboard />} />
+            <Route
+              path="orders"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.VIEW_ORDERS]}>
+                  <DeliveryOrdersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/delivery-confirm"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.UPDATE_ORDER_STATUS]}>
+                  <DeliveryConfirmPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="profile" element={<StaffProfilePage />} />
           </Route>
 
           {/* ===================================================================

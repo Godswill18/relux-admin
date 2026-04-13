@@ -40,12 +40,14 @@ export default function Login() {
         return '/admin';
       case Role.STAFF:
         return '/staff';
+      case Role.DELIVERY:
+        return '/delivery';
       default:
         return '/admin';
     }
   }
 
-  const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'receptionist'];
+  const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'receptionist', 'delivery'];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

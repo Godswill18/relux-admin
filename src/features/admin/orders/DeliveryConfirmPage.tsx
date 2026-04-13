@@ -43,9 +43,13 @@ export default function DeliveryConfirmPage() {
   const { user, isAuthenticated } = useAuthStore();
   const { fetchOrders } = useOrderStore();
 
-  // Resolve base path based on role so staff are sent back to /staff/orders
-  const isStaff = (user?.role as string)?.toLowerCase() === 'staff';
-  const basePath = isStaff ? '/staff/orders' : '/admin/orders';
+  // Resolve base path based on role
+  const roleStr = (user?.role as string)?.toLowerCase();
+  const basePath = roleStr === 'staff'
+    ? '/staff/orders'
+    : roleStr === 'delivery'
+    ? '/delivery/orders'
+    : '/admin/orders';
 
   const [order, setOrder] = useState<any>(null);
   const [lookupLoading, setLookupLoading] = useState(true);

@@ -44,6 +44,7 @@ function RoleBadge({ role }: { role: string }) {
     admin: { variant: 'default', label: 'Admin' },
     manager: { variant: 'default', label: 'Manager' },
     staff: { variant: 'outline', label: 'Staff' },
+    delivery: { variant: 'secondary', label: 'Delivery' },
   };
 
   const config = roleConfig[String(role).toLowerCase()] || { variant: 'outline', label: role };

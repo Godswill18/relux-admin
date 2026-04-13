@@ -93,6 +93,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.VIEW_CHAT,
     Permission.RESPOND_CHAT,
   ],
+
+  [Role.DELIVERY]: [
+    // View and update status of assigned orders only
+    Permission.VIEW_ORDERS,
+    Permission.UPDATE_ORDER_STATUS,
+  ],
 };
 
 // ----------------------------------------------------------------------------

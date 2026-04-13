@@ -40,6 +40,9 @@ function getDefaultDashboard(role: Role | string): string {
     case Role.STAFF:
     case 'STAFF':
       return '/staff';
+    case Role.DELIVERY:
+    case 'DELIVERY':
+      return '/delivery';
     default:
       return '/unauthorized';
   }
@@ -56,16 +59,18 @@ function isRoleAllowed(role: Role | string): boolean {
     return false;
   }
 
-  // Allow admin, manager, receptionist, and staff roles
+  // Allow admin, manager, receptionist, staff, and delivery roles
   return [
     Role.ADMIN,
     Role.MANAGER,
     Role.RECEPTIONIST,
     Role.STAFF,
+    Role.DELIVERY,
     'ADMIN',
     'MANAGER',
     'RECEPTIONIST',
-    'STAFF'
+    'STAFF',
+    'DELIVERY',
   ].includes(normalizedRole as any);
 }
 
@@ -121,6 +126,12 @@ export function ProtectedRoute({
       (normalizedRole === 'ADMIN' || normalizedRole === 'MANAGER' || normalizedRole === 'RECEPTIONIST' ||
        normalizedRole === Role.ADMIN || normalizedRole === Role.MANAGER || normalizedRole === Role.RECEPTIONIST)) {
     return <Navigate to="/admin" replace />;
+  }
+
+  // Delivery role should not land on admin or staff dashboards
+  if ((currentPath === '/admin' || currentPath === '/staff') &&
+      (normalizedRole === 'DELIVERY' || normalizedRole === Role.DELIVERY)) {
+    return <Navigate to="/delivery" replace />;
   }
 
   // Check permissions if required
