@@ -147,6 +147,7 @@ export default function DeliveryConfirmPage() {
   const customer = isWalkIn ? order?.walkInCustomer : order?.customer;
   const items: any[] = order?.items ?? [];
   const pricing = order?.pricing ?? {};
+  const isCancelled = order?.status === 'cancelled';
   const alreadyDelivered = ['delivered', 'completed'].includes(order?.status ?? '');
 
   // Current payment status on the order object (kept in sync after update)
@@ -226,8 +227,21 @@ export default function DeliveryConfirmPage() {
       {/* ── Order details + confirm ── */}
       {!lookupLoading && !lookupError && order && !confirmed && (
         <div className="space-y-4">
+          {/* Cancelled banner */}
+          {isCancelled && (
+            <div className="flex items-start gap-3 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
+              <XCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-base">Order Cancelled</p>
+                <p className="mt-0.5 opacity-80">
+                  This order has been cancelled and cannot be processed for delivery or payment.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Already delivered warning */}
-          {alreadyDelivered && (
+          {!isCancelled && alreadyDelivered && (
             <div className="flex items-center gap-3 rounded-lg border border-amber-400 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-700 dark:text-amber-400">
               <XCircle className="h-5 w-5 shrink-0" />
               <span>
@@ -237,7 +251,7 @@ export default function DeliveryConfirmPage() {
           )}
 
           {/* Unpaid warning — blocks delivery */}
-          {!alreadyDelivered && !isPaid && (
+          {!isCancelled && !alreadyDelivered && !isPaid && (
             <div className="rounded-lg border border-destructive bg-destructive/10 p-4 space-y-3">
               <div className="flex items-start gap-3 text-sm text-destructive">
                 <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -390,7 +404,7 @@ export default function DeliveryConfirmPage() {
           )}
 
           {/* Confirm button — blocked when not paid */}
-          {!alreadyDelivered && (
+          {!isCancelled && !alreadyDelivered && (
             <div className="space-y-2">
               <Button
                 className="w-full"
@@ -418,9 +432,15 @@ export default function DeliveryConfirmPage() {
             </div>
           )}
 
-          {alreadyDelivered && (
+          {!isCancelled && alreadyDelivered && (
             <Button variant="outline" className="w-full" onClick={() => navigate(`${basePath}/delivered`)}>
               View Delivered Orders
+            </Button>
+          )}
+
+          {isCancelled && (
+            <Button variant="outline" className="w-full" onClick={() => navigate(basePath)}>
+              Back to Orders
             </Button>
           )}
         </div>
