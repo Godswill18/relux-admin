@@ -136,9 +136,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const subtotal    = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
   const pickupFee   = watchOrderType === 'pickup-delivery' ? 500 : 0;
   const deliveryFee = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const taxable     = subtotal + pickupFee + deliveryFee - watchDiscount;
-  const tax         = Math.round(taxable * 0.075);
-  const total       = taxable + tax;
+  const total       = Math.max(0, subtotal + pickupFee + deliveryFee - watchDiscount);
 
   // ── Auto-fill customer fields from existing customer dropdown ───────────
   const filteredCustomers = (Array.isArray(customers) ? customers : [])
@@ -218,7 +216,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
           pickupFee,
           deliveryFee,
           discount: watchDiscount,
-          tax,
+          tax: 0,
           total,
         },
       };
@@ -750,10 +748,6 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                     <Input type="number" min={0} className="w-24 h-7 text-right text-sm" {...field} />
                   )}
                 />
-              </div>
-              <div className="flex justify-between">
-                <span>Tax (7.5%)</span>
-                <span>₦{tax.toLocaleString()}</span>
               </div>
               <Separator />
               <div className="flex justify-between font-bold text-base">
