@@ -56,12 +56,15 @@ function MetricCard({
 export default function DeliveryDashboard() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const userId = (user as any)?._id || user?.id;
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Backend already restricts delivery-role to delivery-type orders only.
+  // We fetch all at once; two separate slices are computed client-side.
   const loadOrders = useCallback(async () => {
     try {
-      const res = await apiClient.get('/orders', { params: { limit: 200 } });
+      const res = await apiClient.get('/orders', { params: { limit: 300 } });
       const raw = res.data.data;
       const list: any[] = Array.isArray(raw) ? raw : raw?.orders ?? [];
       setOrders(list);
@@ -76,16 +79,25 @@ export default function DeliveryDashboard() {
 
   const today = new Date();
 
+  // ── Helper: did THIS staff deliver the order? ──────────────────────────────
+  const deliveredByMe = (o: any) => {
+    const dbId = o.deliveredBy?._id || o.deliveredBy;
+    return dbId && String(dbId) === String(userId);
+  };
+
+  // ── Active delivery orders (not yet delivered) ────────────────────────────
+  const activeOrders = orders.filter((o) => !['delivered', 'completed', 'cancelled'].includes(o.status));
+
   // ── Metrics ────────────────────────────────────────────────────────────────
-  const pickedUp       = orders.filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing', 'ready', 'out-for-delivery'].includes(o.status));
-  const delivered      = orders.filter((o) => ['delivered', 'completed'].includes(o.status));
-  const pendingPickup  = orders.filter((o) => ['pending', 'confirmed', 'pending-pickup'].includes(o.status) && o.addOns?.pickup);
-  const pendingDelivery = orders.filter((o) => o.status === 'ready' || o.status === 'out-for-delivery');
-  const todayPickups   = orders.filter((o) => o.actualPickupDate && isSameDay(new Date(o.actualPickupDate), today));
-  const todayDeliveries = orders.filter((o) => o.actualDeliveryDate && isSameDay(new Date(o.actualDeliveryDate), today));
+  const pickedUp       = activeOrders.filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing', 'ready', 'out-for-delivery'].includes(o.status));
+  const delivered      = orders.filter((o) => ['delivered', 'completed'].includes(o.status) && deliveredByMe(o));
+  const pendingPickup  = activeOrders.filter((o) => ['pending', 'confirmed', 'pending-pickup'].includes(o.status) && o.orderType === 'pickup-delivery');
+  const pendingDelivery = activeOrders.filter((o) => o.status === 'ready' || o.status === 'out-for-delivery');
+  const todayPickups   = activeOrders.filter((o) => o.actualPickupDate && isSameDay(new Date(o.actualPickupDate), today));
+  const todayDeliveries = orders.filter((o) => o.actualDeliveryDate && isSameDay(new Date(o.actualDeliveryDate), today) && deliveredByMe(o));
 
   // ── Ready for delivery (highlight) ────────────────────────────────────────
-  const readyForDelivery = orders.filter((o) => o.status === 'ready');
+  const readyForDelivery = activeOrders.filter((o) => o.status === 'ready');
 
   if (loading) {
     return (
@@ -181,15 +193,21 @@ export default function DeliveryDashboard() {
       </div>
 
       {/* Recent activity */}
-      {orders.filter((o) => ['out-for-delivery', 'picked-up'].includes(o.status)).length > 0 && (
+      {activeOrders.filter((o) => ['out-for-delivery', 'picked-up'].includes(o.status)).length > 0 && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">In Progress</h2>
           <div className="space-y-2">
-            {orders
+            {activeOrders
               .filter((o) => ['out-for-delivery', 'picked-up'].includes(o.status))
               .slice(0, 5)
               .map((o) => {
                 const customer = o.customer || o.walkInCustomer;
+                const addr = o.deliveryAddress;
+                const addrText = addr
+                  ? typeof addr === 'string'
+                    ? addr
+                    : [addr.street, addr.city, addr.state].filter(Boolean).join(', ')
+                  : '';
                 return (
                   <div
                     key={o._id}
@@ -201,8 +219,8 @@ export default function DeliveryDashboard() {
                       <p className="text-xs text-muted-foreground truncate">{customer?.name ?? 'Walk-in'}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {o.deliveryAddress && (
-                        <p className="text-xs text-muted-foreground hidden sm:block truncate max-w-[140px]">{o.deliveryAddress}</p>
+                      {addrText && (
+                        <p className="text-xs text-muted-foreground hidden sm:block truncate max-w-[140px]">{addrText}</p>
                       )}
                       <OrderStatusBadge status={o.status} />
                     </div>

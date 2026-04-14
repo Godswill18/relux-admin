@@ -43,6 +43,7 @@ import StaffPerformancePage from '@/features/staff/performance/StaffPerformanceP
 import { DeliveryLayout } from '@/components/layouts/DeliveryLayout';
 import DeliveryDashboard from '@/features/delivery/dashboard/DeliveryDashboard';
 import DeliveryOrdersPage from '@/features/delivery/orders/DeliveryOrdersPage';
+import ScanPickupPage from '@/features/delivery/orders/ScanPickupPage';
 import { Permission, Role } from '@/types';
 import { useAuthStore } from '@/stores/useAuthStore';
 
@@ -379,6 +380,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredPermissions={[Permission.UPDATE_ORDER_STATUS]}>
                   <DeliveryConfirmPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="orders/scan-pickup"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.UPDATE_ORDER_STATUS]}>
+                  <ScanPickupPage />
                 </ProtectedRoute>
               }
             />
