@@ -10,7 +10,7 @@ import { ColumnDef } from '@tanstack/react-table';
 import { useNavigate } from 'react-router-dom';
 import {
   MoreHorizontal, Plus, Edit, Eye, CheckCircle, Search, Package,
-  User, ScanLine, CheckCircle2,
+  User, ScanLine, CheckCircle2, UserCheck, Users,
   Clock, Check, Truck, Settings2, Waves, Zap,
   PackageCheck, Navigation, Home, XCircle, ArrowRight,
 } from 'lucide-react';
@@ -150,6 +150,7 @@ export default function StaffOrdersPage() {
   const navigate  = useNavigate();
 
   const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
+  const [viewScope,    setViewScope]    = useState<'all' | 'mine'>('all');
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
   const [isLoading,    setIsLoading]    = useState(false);
@@ -168,12 +169,12 @@ export default function StaffOrdersPage() {
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
-  // ── Fetch staff-specific counts ──────────────────────────────────────────
+  // ── Fetch tab counts — scope=all shows system-wide counts, scope=mine shows personal ──
   const fetchCounts = useCallback(() => {
-    apiClient.get('/orders/staff-counts')
+    apiClient.get('/orders/staff-counts', { params: { scope: viewScope } })
       .then((res) => { if (res.data?.data) setCounts(res.data.data); })
       .catch(() => {});
-  }, []);
+  }, [viewScope]);
 
   useEffect(() => {
     fetchCounts();
@@ -198,18 +199,34 @@ export default function StaffOrdersPage() {
     };
   }, [fetchCounts]);
 
-  // Socket: refresh list silently
+  // Socket: inline-update lastUpdatedById + status on any order:status-updated
   useEffect(() => {
     const socket = socketClient.getSocket();
     if (!socket) return;
-    const handler = () => setListKey((k) => k + 1);
-    socket.on('order:created',        handler);
-    socket.on('order:assigned',       handler);
-    socket.on('order:status-updated', handler);
+    const statusHandler = (data: { orderId: string; status: string; updatedById?: string; updatedByName?: string }) => {
+      setOrders((prev) =>
+        prev.map((o) =>
+          (o._id === data.orderId || o.id === data.orderId)
+            ? {
+                ...o,
+                status: data.status,
+                lastUpdatedById: data.updatedById
+                  ? { _id: data.updatedById, name: data.updatedByName ?? '' }
+                  : o.lastUpdatedById,
+              }
+            : o
+        )
+      );
+      setListKey((k) => k + 1);
+    };
+    const refreshHandler = () => setListKey((k) => k + 1);
+    socket.on('order:status-updated', statusHandler);
+    socket.on('order:created',        refreshHandler);
+    socket.on('order:assigned',       refreshHandler);
     return () => {
-      socket.off('order:created',        handler);
-      socket.off('order:assigned',       handler);
-      socket.off('order:status-updated', handler);
+      socket.off('order:status-updated', statusHandler);
+      socket.off('order:created',        refreshHandler);
+      socket.off('order:assigned',       refreshHandler);
     };
   }, []);
 
@@ -237,9 +254,10 @@ export default function StaffOrdersPage() {
       setIsLoading(true);
       setSearch('');
       try {
-        const res = await apiClient.get('/orders', {
-          params: { statusTab: activeTab, limit: '100' },
-        });
+        const params: Record<string, string> = { statusTab: activeTab, limit: '100' };
+        // In "My Orders" scope, filter server-side to orders involving this staff
+        if (viewScope === 'mine' && activeTab !== 'pending') params.myOrders = 'true';
+        const res = await apiClient.get('/orders', { params });
         if (!cancelled) {
           const raw = res.data.data;
           setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
@@ -252,7 +270,7 @@ export default function StaffOrdersPage() {
     };
     fetchOrders();
     return () => { cancelled = true; };
-  }, [activeTab, refreshKey, listKey]);
+  }, [activeTab, viewScope, refreshKey, listKey]);
 
   const filteredOrders = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -373,6 +391,30 @@ export default function StaffOrdersPage() {
                 {SERVICE_LABELS[s] ?? s.replace(/-/g, ' ')}
               </Badge>
             ))}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'handledBy',
+      header: 'Handled By',
+      cell: ({ row }) => {
+        const assigned = row.original.assignedStaff;
+        const lastBy   = row.original.lastUpdatedById;
+        if (!assigned?.name) {
+          return <span className="text-xs text-muted-foreground italic">Unassigned</span>;
+        }
+        return (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium flex items-center gap-1">
+              <UserCheck className="h-3 w-3 text-muted-foreground shrink-0" />
+              {assigned.name}
+            </span>
+            {lastBy?.name && lastBy.name !== assigned.name && (
+              <span className="text-[10px] text-muted-foreground">
+                Updated by: {lastBy.name}
+              </span>
+            )}
           </div>
         );
       },
@@ -509,7 +551,9 @@ export default function StaffOrdersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Orders</h1>
-          <p className="text-muted-foreground text-sm">Your laundry workflow</p>
+          <p className="text-muted-foreground text-sm">
+            {viewScope === 'all' ? 'All orders in the system' : 'Orders you are handling'}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => navigate('/staff/orders/delivered')} className="flex-1 sm:flex-none">
@@ -527,15 +571,45 @@ export default function StaffOrdersPage() {
         </div>
       </div>
 
+      {/* ── View Scope Toggle ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 p-1 bg-muted rounded-lg w-fit">
+        <button
+          onClick={() => setViewScope('all')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            viewScope === 'all'
+              ? 'bg-background shadow-sm text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Users className="h-3.5 w-3.5" />
+          All Orders
+        </button>
+        <button
+          onClick={() => setViewScope('mine')}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            viewScope === 'mine'
+              ? 'bg-background shadow-sm text-foreground'
+              : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <UserCheck className="h-3.5 w-3.5" />
+          My Orders
+        </button>
+      </div>
+
       {/* ── Stats Cards ──────────────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">My Orders</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">
+              {viewScope === 'all' ? 'Total Active' : 'My Orders'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="text-2xl font-bold">{myTotal}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Assigned to me</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {viewScope === 'all' ? 'Across all staff' : 'Assigned to me'}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -654,6 +728,8 @@ export default function StaffOrdersPage() {
                 <CardDescription>
                   {tab.key === 'pending'
                     ? 'Unassigned orders available to claim'
+                    : viewScope === 'all'
+                    ? `All orders at ${tab.label.toLowerCase()} stage`
                     : `Your orders at ${tab.label.toLowerCase()} stage`}
                 </CardDescription>
               </CardHeader>
@@ -772,6 +848,17 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
             <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <User className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{name}</span>
+            </div>
+            {/* Handled-by row */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
+              <UserCheck className="h-3 w-3 shrink-0" />
+              {order.assignedStaff?.name
+                ? <span className="truncate">Handled by: <strong>{order.assignedStaff.name}</strong></span>
+                : <span className="italic">Unassigned</span>
+              }
+              {order.lastUpdatedById?.name && order.lastUpdatedById.name !== order.assignedStaff?.name && (
+                <span className="ml-1 text-[10px]">· Updated by: {order.lastUpdatedById.name}</span>
+              )}
             </div>
           </div>
 
