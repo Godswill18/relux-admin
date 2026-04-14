@@ -23,7 +23,9 @@ const normalizeDeliveryZone = (item: any) => ({
 const normalizeServiceLevel = (item: any) => ({
   ...normalize(item),
   name: item.name || (item.level ? item.level.charAt(0).toUpperCase() + item.level.slice(1) : 'Unknown'),
-  level: item.level,
+  percentageAdjustment: item.percentageAdjustment ?? 0,
+  description: item.description ?? '',
+  displayOrder: item.displayOrder ?? 0,
 });
 
 // Reverse-map: frontend `isActive` → backend `active`
@@ -88,7 +90,9 @@ interface ServiceState {
   updateCategory: (categoryId: string, data: any) => Promise<void>;
   deleteCategory: (categoryId: string) => Promise<void>;
 
+  createServiceLevel: (data: any) => Promise<void>;
   updateServiceLevel: (levelId: string, data: any) => Promise<void>;
+  deleteServiceLevel: (levelId: string) => Promise<void>;
 
   createPickupWindow: (data: any) => Promise<void>;
   updatePickupWindow: (windowId: string, data: any) => Promise<void>;
@@ -424,12 +428,32 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
 
   // ---- SERVICE LEVEL CRUD ----
 
+  createServiceLevel: async (data) => {
+    try {
+      await apiClient.post('/services/levels', data);
+      await get().fetchServiceLevels();
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to create service level' });
+      throw error;
+    }
+  },
+
   updateServiceLevel: async (levelId, data) => {
     try {
-      await apiClient.put(`/services/levels/${levelId}`, toBackend(data));
+      await apiClient.put(`/services/levels/${levelId}`, data);
       await get().fetchServiceLevels();
     } catch (error: any) {
       set({ error: error.response?.data?.message || 'Failed to update service level' });
+      throw error;
+    }
+  },
+
+  deleteServiceLevel: async (levelId) => {
+    try {
+      await apiClient.delete(`/services/levels/${levelId}`);
+      await get().fetchServiceLevels();
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to delete service level' });
       throw error;
     }
   },

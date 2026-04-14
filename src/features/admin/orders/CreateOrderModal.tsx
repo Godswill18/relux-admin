@@ -51,7 +51,8 @@ const createOrderSchema = z.object({
     name:  z.string().min(1, 'Customer name is required'),
     phone: z.string().min(1, 'Customer phone is required'),
   }),
-  serviceLevel:        z.string().min(1, 'Service level required'),
+  serviceLevel:        z.string().optional(), // kept for legacy compat
+  serviceLevelId:      z.string().optional(), // DB id of the selected level
   orderType:           z.enum(['walk-in', 'pickup-delivery']),
   items:               z.array(orderItemSchema).min(1, 'At least one item is required'),
   pickupAddress: z.object({
@@ -110,7 +111,8 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
       walkInCustomer:      { name: '', phone: '' },
-      serviceLevel:        'standard',
+      serviceLevel:        '',
+      serviceLevelId:      '',
       orderType:           'walk-in',
       items:               [{ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' }],
       paymentMethod:       'cash',
@@ -127,16 +129,23 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     name: 'items',
   });
 
-  const isSubmitting   = form.formState.isSubmitting;
-  const watchItems     = form.watch('items');
-  const watchOrderType = form.watch('orderType');
-  const watchDiscount  = form.watch('discount') || 0;
+  const isSubmitting      = form.formState.isSubmitting;
+  const watchItems        = form.watch('items');
+  const watchOrderType    = form.watch('orderType');
+  const watchDiscount     = form.watch('discount') || 0;
+  const watchServiceLevId = form.watch('serviceLevelId');
+
+  // Resolve the selected service level object for live pricing
+  const selectedLevel = (Array.isArray(serviceLevels) ? serviceLevels : [])
+    .find((lvl: any) => (lvl.id || lvl._id) === watchServiceLevId);
+  const levelPct      = selectedLevel?.percentageAdjustment ?? 0;
 
   // Pricing
-  const subtotal    = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
-  const pickupFee   = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const deliveryFee = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const total       = Math.max(0, subtotal + pickupFee + deliveryFee - watchDiscount);
+  const subtotal         = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
+  const pickupFee        = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const deliveryFee      = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const serviceLevelFee  = Math.round(subtotal * levelPct / 100);
+  const total            = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee - watchDiscount);
 
   // ── Auto-fill customer fields from existing customer dropdown ───────────
   const filteredCustomers = (Array.isArray(customers) ? customers : [])
@@ -193,11 +202,14 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       const primaryServiceType = resolveServiceType(data.items[0].serviceId);
 
       const orderPayload: any = {
-        walkInCustomer:      data.walkInCustomer,
-        serviceType:         primaryServiceType,
-        serviceLevel:        data.serviceLevel,
-        orderType:           data.orderType,
-        items:               data.items.map((item) => ({
+        walkInCustomer:           data.walkInCustomer,
+        serviceType:              primaryServiceType,
+        serviceLevel:             selectedLevel?.name || data.serviceLevel || '',
+        serviceLevelId:           data.serviceLevelId || undefined,
+        serviceLevelName:         selectedLevel?.name || '',
+        serviceLevelPercentage:   levelPct,
+        orderType:                data.orderType,
+        items:                    data.items.map((item) => ({
           itemType:    item.itemType,
           serviceType: resolveServiceType(item.serviceId),
           quantity:    item.quantity,
@@ -205,18 +217,19 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
           total:       item.quantity * item.unitPrice,
           description: item.description || undefined,
         })),
-        paymentMethod:       data.paymentMethod,
-        specialInstructions: data.specialInstructions || undefined,
-        assignedStaff:       data.assignedStaff || undefined,
-        discount:            data.discount || 0,
+        paymentMethod:            data.paymentMethod,
+        specialInstructions:      data.specialInstructions || undefined,
+        assignedStaff:            data.assignedStaff || undefined,
+        discount:                 data.discount || 0,
         pickupFee,
         deliveryFee,
         pricing: {
           subtotal,
           pickupFee,
           deliveryFee,
-          discount: watchDiscount,
-          tax: 0,
+          serviceFee: serviceLevelFee,
+          discount:   watchDiscount,
+          tax:        0,
           total,
         },
       };
@@ -324,27 +337,38 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormField
               control={form.control}
-              name="serviceLevel"
+              name="serviceLevelId"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Service Level</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select
+                    onValueChange={(val) => {
+                      field.onChange(val);
+                      const lvl = activeLevels.find((l: any) => (l.id || l._id) === val);
+                      form.setValue('serviceLevel', lvl?.name || '');
+                    }}
+                    value={field.value}
+                  >
                     <FormControl>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select service level" />
+                      </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       {activeLevels.length > 0 ? (
-                        activeLevels.map((lvl) => (
-                          <SelectItem key={lvl.id || lvl.level} value={lvl.level || lvl.id}>
-                            {lvl.name}
-                          </SelectItem>
-                        ))
+                        activeLevels
+                          .filter((lvl: any) => lvl.isActive !== false)
+                          .map((lvl: any) => {
+                            const pct = lvl.percentageAdjustment ?? 0;
+                            const label = pct === 0 ? lvl.name : `${lvl.name} (+${pct}%)`;
+                            return (
+                              <SelectItem key={lvl.id || lvl._id} value={lvl.id || lvl._id}>
+                                {label}
+                              </SelectItem>
+                            );
+                          })
                       ) : (
-                        <>
-                          <SelectItem value="standard">Standard</SelectItem>
-                          <SelectItem value="express">Express</SelectItem>
-                          <SelectItem value="premium">Premium</SelectItem>
-                        </>
+                        <SelectItem value="" disabled>No service levels configured</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -737,6 +761,15 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                 <div className="flex justify-between">
                   <span>Delivery Fee</span>
                   <span>₦{deliveryFee.toLocaleString()}</span>
+                </div>
+              )}
+              {serviceLevelFee > 0 && (
+                <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                  <span>
+                    Service Level
+                    {selectedLevel ? ` — ${selectedLevel.name} (+${levelPct}%)` : ''}
+                  </span>
+                  <span>₦{serviceLevelFee.toLocaleString()}</span>
                 </div>
               )}
               <div className="flex justify-between items-center">
