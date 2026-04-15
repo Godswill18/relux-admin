@@ -289,7 +289,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                               </SelectItem>
                             ) : (
                               categories
-                                .filter((c) => c.isActive !== false)
+                                .filter((c) => c.isActive !== false && !!c.name)
                                 .map((c) => (
                                   <SelectItem key={c.id || c._id} value={c.name}>
                                     {c.name}
@@ -403,14 +403,17 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                     <SelectValue placeholder="Select service level (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeLevels.map((l: any) => {
-                      const pct = l.percentageAdjustment ?? 0;
-                      return (
-                        <SelectItem key={l.id || l._id} value={l.id || l._id}>
-                          {pct === 0 ? l.name : `${l.name} (+${pct}%)`}
-                        </SelectItem>
-                      );
-                    })}
+                    {activeLevels
+                      .filter((l: any) => !!(l.id || l._id))
+                      .map((l: any) => {
+                        const id  = l.id || l._id;
+                        const pct = l.percentageAdjustment ?? 0;
+                        return (
+                          <SelectItem key={id} value={id}>
+                            {pct === 0 ? l.name : `${l.name} (+${pct}%)`}
+                          </SelectItem>
+                        );
+                      })}
                   </SelectContent>
                 </Select>
               </div>

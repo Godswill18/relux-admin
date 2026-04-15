@@ -374,18 +374,19 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                     <SelectContent>
                       {activeLevels.length > 0 ? (
                         activeLevels
-                          .filter((lvl: any) => lvl.isActive !== false)
+                          .filter((lvl: any) => lvl.isActive !== false && !!(lvl.id || lvl._id))
                           .map((lvl: any) => {
+                            const id  = lvl.id || lvl._id;
                             const pct = lvl.percentageAdjustment ?? 0;
                             const label = pct === 0 ? lvl.name : `${lvl.name} (+${pct}%)`;
                             return (
-                              <SelectItem key={lvl.id || lvl._id} value={lvl.id || lvl._id}>
+                              <SelectItem key={id} value={id}>
                                 {label}
                               </SelectItem>
                             );
                           })
                       ) : (
-                        <SelectItem value="" disabled>No service levels configured</SelectItem>
+                        <SelectItem value="__none" disabled>No service levels configured</SelectItem>
                       )}
                     </SelectContent>
                   </Select>
@@ -475,9 +476,12 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                           {activeServices.length === 0 ? (
                             <SelectItem value="__none" disabled>No services — add on Services page</SelectItem>
                           ) : (
-                            activeServices.map((s) => (
-                              <SelectItem key={s.id || s._id} value={s.id || s._id}>{s.name}</SelectItem>
-                            ))
+                            activeServices
+                              .filter((s) => !!(s.id || s._id))
+                              .map((s) => {
+                                const id = s.id || s._id;
+                                return <SelectItem key={id} value={id}>{s.name}</SelectItem>;
+                              })
                           )}
                         </SelectContent>
                       </Select>
@@ -507,14 +511,16 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                           {categoriesForService.length === 0 ? (
                             <SelectItem value="__none" disabled>No items for this service</SelectItem>
                           ) : (
-                            categoriesForService.map((c) => (
-                              <SelectItem key={c.id || c._id} value={c.name}>
-                                {c.name}
-                                <span className="text-xs text-muted-foreground ml-1.5">
-                                  ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
-                                </span>
-                              </SelectItem>
-                            ))
+                            categoriesForService
+                              .filter((c) => !!c.name)
+                              .map((c) => (
+                                <SelectItem key={c.id || c._id} value={c.name}>
+                                  {c.name}
+                                  <span className="text-xs text-muted-foreground ml-1.5">
+                                    ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
+                                  </span>
+                                </SelectItem>
+                              ))
                           )}
                         </SelectContent>
                       </Select>
@@ -704,11 +710,16 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {(Array.isArray(staff) ? staff : []).map((s: any) => (
-                        <SelectItem key={s._id || s.id} value={s._id || s.id}>
-                          {s.name}
-                        </SelectItem>
-                      ))}
+                      {(Array.isArray(staff) ? staff : [])
+                        .filter((s: any) => !!(s._id || s.id))
+                        .map((s: any) => {
+                          const id = s._id || s.id;
+                          return (
+                            <SelectItem key={id} value={id}>
+                              {s.name}
+                            </SelectItem>
+                          );
+                        })}
                     </SelectContent>
                   </Select>
                   <FormMessage />
