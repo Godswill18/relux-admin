@@ -174,12 +174,12 @@ export default function Login() {
             <p>Manager: manager@reluxlaundry.com / manager123</p>
             <p>Staff: staff@reluxlaundry.com / staff123</p>
           </div> */}
-          <div className="mt-6 text-center text-sm">
+          {/* <div className="mt-6 text-center text-sm">
             <span className="text-muted-foreground">Don't have an account? </span>
             <Link to="/signup" className="text-primary hover:underline font-medium">
               Register here
             </Link>
-          </div>
+          </div> */}
         </CardContent>
       </Card>
     </div>
