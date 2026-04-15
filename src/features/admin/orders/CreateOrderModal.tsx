@@ -825,6 +825,22 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
           <div className="space-y-2 rounded-lg border p-4 bg-muted/50">
             <h3 className="text-sm font-semibold">Pricing Summary</h3>
             <div className="space-y-1 text-sm">
+              {/* Per-item line items */}
+              {watchItems.filter((item) => item.itemType && (item.unitPrice ?? 0) > 0).map((item, i) => {
+                const svc = activeServices.find((s) => (s.id || s._id) === item.serviceId);
+                const lineTotal = (item.quantity || 0) * (item.unitPrice || 0);
+                return (
+                  <div key={i} className="flex justify-between text-muted-foreground text-xs">
+                    <span>
+                      {svc?.name ? `${svc.name} — ` : ''}{item.itemType} × {item.quantity}
+                    </span>
+                    <span>₦{lineTotal.toLocaleString()}</span>
+                  </div>
+                );
+              })}
+              {watchItems.some((item) => item.itemType && (item.unitPrice ?? 0) > 0) && (
+                <Separator className="my-1" />
+              )}
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span>₦{subtotal.toLocaleString()}</span>
