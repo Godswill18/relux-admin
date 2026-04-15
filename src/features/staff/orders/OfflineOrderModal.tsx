@@ -139,6 +139,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
       const orderItems = data.items.map((item) => ({
         itemType:    item.itemType,
         serviceType: item.serviceType,
+        serviceName: SERVICE_TYPES.find((s) => s.value === item.serviceType)?.label ?? item.serviceType,
         quantity:    item.quantity,
         unitPrice:   item.unitPrice,
         total:       item.quantity * item.unitPrice,

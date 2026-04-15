@@ -402,37 +402,45 @@ export default function OrderDetailPage() {
             <CardContent>
               {items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No items</p>
-              ) : (
-                <div className="space-y-3">
-                  {items.map((item: any, idx: number) => {
-                    const svc = serviceLabel(item.serviceType);
-                    return (
-                      <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="min-w-0">
-                          <div className="font-medium">{item.itemType || '—'}</div>
-                          {svc && (
-                            <Badge variant="outline" className="capitalize text-xs mt-1">
-                              {svc}
-                            </Badge>
-                          )}
-                          {item.description && (
-                            <div className="text-sm text-muted-foreground mt-1">{item.description}</div>
-                          )}
-                          {item.condition && (
-                            <div className="text-xs text-muted-foreground">Condition: {item.condition}</div>
-                          )}
-                        </div>
-                        <div className="text-right shrink-0 ml-4">
-                          <div className="text-sm text-muted-foreground">Qty: {item.quantity}</div>
-                          {item.unitPrice != null && (
-                            <div className="font-medium">₦{(item.unitPrice * item.quantity).toLocaleString()}</div>
-                          )}
+              ) : (() => {
+                // Group items by serviceName (fallback: serviceLabel or serviceType)
+                const groups = new Map<string, any[]>();
+                items.forEach((item: any) => {
+                  const key = item.serviceName || serviceLabel(item.serviceType) || item.serviceType || 'Other';
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(item);
+                });
+                return (
+                  <div className="space-y-4">
+                    {Array.from(groups.entries()).map(([groupName, groupItems]) => (
+                      <div key={groupName}>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{groupName}</p>
+                        <div className="space-y-2 pl-2 border-l-2 border-muted">
+                          {groupItems.map((item: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                              <div className="min-w-0">
+                                <div className="font-medium">{item.itemType || '—'}</div>
+                                {item.description && item.description !== item.itemType && (
+                                  <div className="text-sm text-muted-foreground mt-0.5">{item.description}</div>
+                                )}
+                                {item.condition && (
+                                  <div className="text-xs text-muted-foreground">Condition: {item.condition}</div>
+                                )}
+                              </div>
+                              <div className="text-right shrink-0 ml-4">
+                                <div className="text-sm text-muted-foreground">× {item.quantity}</div>
+                                {item.unitPrice != null && (
+                                  <div className="font-medium">₦{(item.unitPrice * item.quantity).toLocaleString()}</div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    ))}
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 

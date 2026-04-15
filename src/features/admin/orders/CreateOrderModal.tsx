@@ -230,6 +230,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
         items:                    data.items.map((item) => ({
           itemType:    item.itemType,
           serviceType: resolveServiceType(item.serviceId),
+          serviceName: resolveServiceType(item.serviceId),
           quantity:    item.quantity,
           unitPrice:   item.unitPrice,
           total:       item.quantity * item.unitPrice,

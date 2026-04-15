@@ -36,12 +36,24 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
     const canvas = document.getElementById('receipt-qr-canvas') as HTMLCanvasElement | null;
     const qrDataUrl = canvas?.toDataURL('image/png') ?? '';
 
-    const itemsHtml = items.map((item) => `
-      <tr>
-        <td style="padding:3px 0">${item.itemType ?? '—'} × ${item.quantity ?? 1}</td>
-        <td style="text-align:right;padding:3px 0">₦${((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="2" style="padding:4px 0;color:#555">No items listed</td></tr>';
+    // Group items by serviceName for the print template
+    const printGroups = new Map<string, any[]>();
+    items.forEach((item) => {
+      const key = item.serviceName || item.serviceType || 'Items';
+      if (!printGroups.has(key)) printGroups.set(key, []);
+      printGroups.get(key)!.push(item);
+    });
+    const itemsHtml = printGroups.size === 0
+      ? '<tr><td colspan="2" style="padding:4px 0;color:#555">No items listed</td></tr>'
+      : Array.from(printGroups.entries()).map(([grp, grpItems]) => `
+          <tr><td colspan="2" style="padding:4px 0 2px;font-weight:bold;font-size:11px;border-bottom:1px dashed #aaa">${grp}</td></tr>
+          ${grpItems.map((item) => `
+            <tr>
+              <td style="padding:2px 0 2px 8px">${item.itemType ?? '—'} × ${item.quantity ?? 1}</td>
+              <td style="text-align:right;padding:2px 0">₦${((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</td>
+            </tr>
+          `).join('')}
+        `).join('');
 
     const extraFees = [
       pricing.pickupFee > 0 ? `<div class="row"><span>Pickup Fee</span><span>₦${Number(pricing.pickupFee).toLocaleString()}</span></div>` : '',
@@ -155,19 +167,32 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
 
           <Separator className="border-dashed border-gray-300" />
 
-          {/* Items */}
-          <div className="space-y-0.5 text-gray-800">
-            <div className="flex justify-between font-bold text-[10px] border-b border-dashed border-gray-300 pb-1">
+          {/* Items grouped by service */}
+          <div className="text-gray-800">
+            <div className="flex justify-between font-bold text-[10px] border-b border-dashed border-gray-300 pb-1 mb-1">
               <span>Item</span><span>Amount</span>
             </div>
             {items.length === 0 ? (
               <p className="text-gray-400 py-1 text-center">No items listed</p>
-            ) : items.map((item, i) => (
-              <div key={i} className="flex justify-between">
-                <span>{item.itemType ?? '—'} × {item.quantity ?? 1}</span>
-                <span>₦{((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</span>
-              </div>
-            ))}
+            ) : (() => {
+              const groups = new Map<string, any[]>();
+              items.forEach((item) => {
+                const key = (item as any).serviceName || (item as any).serviceType || 'Items';
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key)!.push(item);
+              });
+              return Array.from(groups.entries()).map(([grp, grpItems]) => (
+                <div key={grp} className="mb-1.5">
+                  <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500 border-b border-dashed border-gray-200 pb-0.5 mb-0.5">{grp}</p>
+                  {grpItems.map((item, i) => (
+                    <div key={i} className="flex justify-between pl-2">
+                      <span>{(item as any).itemType ?? '—'} × {(item as any).quantity ?? 1}</span>
+                      <span>₦{(((item as any).unitPrice ?? 0) * ((item as any).quantity ?? 1)).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              ));
+            })()}
           </div>
 
           <Separator className="border-dashed border-gray-300" />
