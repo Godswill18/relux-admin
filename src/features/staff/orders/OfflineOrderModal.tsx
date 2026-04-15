@@ -2,7 +2,7 @@
 // OFFLINE ORDER MODAL - Staff creates a walk-in order without a customer account
 // ============================================================================
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -33,9 +33,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus, Trash2, Tag } from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import { useServiceStore } from '@/stores/useServiceStore';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // ============================================================================
 // CONSTANTS
@@ -80,11 +81,25 @@ interface OfflineOrderModalProps {
 }
 
 export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrderModalProps) {
-  const { categories, fetchCategories } = useServiceStore();
+  const { categories, serviceLevels, addons, fetchCategories, fetchServiceLevels, fetchAddons } = useServiceStore();
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [serviceLevelId, setServiceLevelId]     = useState('');
 
   useEffect(() => {
-    if (open) fetchCategories();
-  }, [open, fetchCategories]);
+    if (open) {
+      fetchCategories();
+      fetchServiceLevels();
+      fetchAddons();
+    } else {
+      setSelectedAddonIds([]);
+      setServiceLevelId('');
+    }
+  }, [open, fetchCategories, fetchServiceLevels, fetchAddons]);
+
+  const activeAddons  = (Array.isArray(addons) ? addons : []).filter((a) => a.isActive !== false);
+  const activeLevels  = (Array.isArray(serviceLevels) ? serviceLevels : []).filter((l) => l.isActive !== false);
+  const selectedLevel = activeLevels.find((l) => (l.id || l._id) === serviceLevelId);
+  const levelPct      = selectedLevel?.percentageAdjustment ?? 0;
 
   const form = useForm<OfflineOrderForm>({
     resolver: zodResolver(offlineOrderSchema),
@@ -108,6 +123,15 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
     0
   );
 
+  // Live pricing including add-ons and service level
+  const serviceLevelFee = Math.round(subtotal * levelPct / 100);
+  const selectedAddons  = activeAddons.filter((a) => selectedAddonIds.includes(a.id || a._id));
+  const addonsFee       = selectedAddons.reduce((sum, a) => {
+    const amount = a.type === 'fixed' ? a.value : Math.round(subtotal * a.value / 100);
+    return sum + amount;
+  }, 0);
+  const orderTotal = subtotal + serviceLevelFee + addonsFee;
+
   const isSubmitting = form.formState.isSubmitting;
 
   const onSubmit = async (data: OfflineOrderForm) => {
@@ -130,16 +154,22 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
           name:  data.customerName,
           phone: data.customerPhone,
         },
-        serviceType: primaryService,
-        items:       orderItems,
-        paymentMethod: data.paymentMethod,
-        specialInstructions: data.specialInstructions || undefined,
+        serviceType:              primaryService,
+        serviceLevel:             selectedLevel?.name || '',
+        serviceLevelId:           serviceLevelId || undefined,
+        serviceLevelName:         selectedLevel?.name || '',
+        serviceLevelPercentage:   levelPct,
+        items:                    orderItems,
+        paymentMethod:            data.paymentMethod,
+        specialInstructions:      data.specialInstructions || undefined,
+        addons: selectedAddonIds.map((id) => ({ addonId: id })),
         pricing: {
           subtotal,
-          total:       subtotal,
+          serviceFee:  serviceLevelFee,
+          addOnsFee:   addonsFee,
+          total:       orderTotal,
           pickupFee:   0,
           deliveryFee: 0,
-          addOnsFee:   0,
           discount:    0,
           tax:         0,
         },
@@ -340,14 +370,92 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                 </div>
               ))}
 
-              {/* Subtotal */}
-              <div className="flex justify-end pt-1">
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Subtotal: </span>
-                  <span className="font-bold">₦{subtotal.toLocaleString()}</span>
-                </div>
+              {/* Pricing summary */}
+              <div className="flex flex-col items-end gap-0.5 pt-1 text-sm">
+                <span><span className="text-muted-foreground">Subtotal: </span><span className="font-medium">₦{subtotal.toLocaleString()}</span></span>
+                {serviceLevelFee > 0 && (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {selectedLevel?.name} (+{levelPct}%): ₦{serviceLevelFee.toLocaleString()}
+                  </span>
+                )}
+                {selectedAddons.map((a) => {
+                  const amt = a.type === 'fixed' ? a.value : Math.round(subtotal * a.value / 100);
+                  return (
+                    <span key={a.id || a._id} className="text-purple-700 dark:text-purple-400">
+                      {a.name}: ₦{amt.toLocaleString()}
+                    </span>
+                  );
+                })}
+                <span className="font-bold text-base border-t pt-0.5 mt-0.5">
+                  Total: ₦{orderTotal.toLocaleString()}
+                </span>
               </div>
             </div>
+
+            <Separator />
+
+            {/* ── Service Level ─────────────────────────────────────────── */}
+            {activeLevels.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Service Level</p>
+                <Select value={serviceLevelId} onValueChange={setServiceLevelId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select service level (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeLevels.map((l: any) => {
+                      const pct = l.percentageAdjustment ?? 0;
+                      return (
+                        <SelectItem key={l.id || l._id} value={l.id || l._id}>
+                          {pct === 0 ? l.name : `${l.name} (+${pct}%)`}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* ── Add-ons ───────────────────────────────────────────────── */}
+            {activeAddons.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                  <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Add-ons</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {activeAddons.map((addon: any) => {
+                    const id     = addon.id || addon._id;
+                    const label  = addon.type === 'fixed'
+                      ? `+₦${Number(addon.value).toLocaleString()}`
+                      : `+${addon.value}% of subtotal`;
+                    const checked = selectedAddonIds.includes(id);
+                    return (
+                      <label
+                        key={id}
+                        className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
+                          checked ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) =>
+                            setSelectedAddonIds((prev) =>
+                              v ? [...prev, id] : prev.filter((x) => x !== id)
+                            )
+                          }
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium leading-none">{addon.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <Separator />
 

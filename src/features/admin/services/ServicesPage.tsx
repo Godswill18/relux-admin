@@ -14,11 +14,13 @@ import { CategoriesTab } from './CategoriesTab';
 import { ServiceLevelsTab } from './ServiceLevelsTab';
 import { PickupWindowsTab } from './PickupWindowsTab';
 import { DeliveryZonesTab } from './DeliveryZonesTab';
+import { AddonsTab } from './AddonsTab';
 
 const TABS = [
   { value: 'services',    label: 'Services' },
   { value: 'categories',  label: 'Categories' },
   { value: 'levels',      label: 'Service Levels' },
+  { value: 'addons',      label: 'Add-ons' },
   { value: 'pickup',      label: 'Pickup Windows' },
   { value: 'delivery',    label: 'Delivery Zones' },
 ] as const;
@@ -29,6 +31,7 @@ const TAB_META: Record<TabValue, { title: string; description: string }> = {
   services:   { title: 'Services',          description: 'Manage available laundry services' },
   categories: { title: 'Service Categories', description: 'Manage item categories and base pricing' },
   levels:     { title: 'Service Levels',     description: 'Configure pricing tiers and delivery speeds' },
+  addons:     { title: 'Add-ons',            description: 'Configure optional add-on charges for orders' },
   pickup:     { title: 'Pickup Windows',     description: 'Manage available pickup time slots' },
   delivery:   { title: 'Delivery Zones',     description: 'Configure delivery areas and pricing' },
 };
@@ -36,7 +39,7 @@ const TAB_META: Record<TabValue, { title: string; description: string }> = {
 export default function ServicesPage() {
   const {
     fetchServices, fetchCategories, fetchServiceLevels,
-    fetchPickupWindows, fetchDeliveryZones,
+    fetchPickupWindows, fetchDeliveryZones, fetchAddons,
   } = useServiceStore();
 
   const [activeTab, setActiveTab] = useState<TabValue>('services');
@@ -47,7 +50,8 @@ export default function ServicesPage() {
     fetchServiceLevels();
     fetchPickupWindows();
     fetchDeliveryZones();
-  }, [fetchServices, fetchCategories, fetchServiceLevels, fetchPickupWindows, fetchDeliveryZones]);
+    fetchAddons();
+  }, [fetchServices, fetchCategories, fetchServiceLevels, fetchPickupWindows, fetchDeliveryZones, fetchAddons]);
 
   const meta = TAB_META[activeTab];
 
@@ -93,6 +97,7 @@ export default function ServicesPage() {
                 {t.value === 'services'    && <ServicesTab />}
                 {t.value === 'categories'  && <CategoriesTab />}
                 {t.value === 'levels'      && <ServiceLevelsTab />}
+                {t.value === 'addons'      && <AddonsTab />}
                 {t.value === 'pickup'      && <PickupWindowsTab />}
                 {t.value === 'delivery'    && <DeliveryZonesTab />}
               </CardContent>

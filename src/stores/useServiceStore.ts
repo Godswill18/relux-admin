@@ -28,6 +28,15 @@ const normalizeServiceLevel = (item: any) => ({
   displayOrder: item.displayOrder ?? 0,
 });
 
+const normalizeAddon = (item: any) => ({
+  ...normalize(item),
+  name: item.name || '',
+  type: item.type || 'fixed',   // 'fixed' | 'percentage'
+  value: item.value ?? 0,
+  description: item.description ?? '',
+  displayOrder: item.displayOrder ?? 0,
+});
+
 // Reverse-map: frontend `isActive` → backend `active`
 const toBackend = (data: any) => {
   const out = { ...data };
@@ -62,6 +71,7 @@ interface ServiceState {
   serviceLevels: any[];
   pickupWindows: any[];
   deliveryZones: any[];
+  addons: any[];
   isLoading: boolean;
   error: string | null;
 
@@ -80,6 +90,7 @@ interface ServiceState {
   loadMorePickupWindows: () => Promise<void>;
   fetchDeliveryZones: () => Promise<void>;
   loadMoreDeliveryZones: () => Promise<void>;
+  fetchAddons: () => Promise<void>;
 
   createService: (data: any) => Promise<void>;
   updateService: (serviceId: string, data: any) => Promise<void>;
@@ -101,6 +112,10 @@ interface ServiceState {
   createDeliveryZone: (data: any) => Promise<void>;
   updateDeliveryZone: (zoneId: string, data: any) => Promise<void>;
   deleteDeliveryZone: (zoneId: string) => Promise<void>;
+
+  createAddon: (data: any) => Promise<void>;
+  updateAddon: (addonId: string, data: any) => Promise<void>;
+  deleteAddon: (addonId: string) => Promise<string | undefined>;
 }
 
 // ============================================================================
@@ -113,6 +128,7 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
   serviceLevels: [],
   pickupWindows: [],
   deliveryZones: [],
+  addons: [],
   isLoading: false,
   error: null,
 
@@ -347,6 +363,22 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
     }
   },
 
+  fetchAddons: async () => {
+    try {
+      set({ isLoading: true, error: null });
+      const response = await apiClient.get('/services/addons');
+      if (response.data.success) {
+        const raw = response.data.data;
+        const list = Array.isArray(raw) ? raw : raw?.addons || [];
+        set({ addons: list.map(normalizeAddon), isLoading: false });
+      } else {
+        set({ addons: [], isLoading: false });
+      }
+    } catch (error: any) {
+      set({ error: error.message || 'Failed to fetch add-ons', addons: [], isLoading: false });
+    }
+  },
+
   // ---- SERVICE CRUD ----
 
   createService: async (data) => {
@@ -518,6 +550,39 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
       await get().fetchDeliveryZones();
     } catch (error: any) {
       set({ error: error.response?.data?.message || 'Failed to delete delivery zone' });
+      throw error;
+    }
+  },
+
+  // ---- ADDON CRUD ----
+
+  createAddon: async (data) => {
+    try {
+      await apiClient.post('/services/addons', data);
+      await get().fetchAddons();
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to create add-on' });
+      throw error;
+    }
+  },
+
+  updateAddon: async (addonId, data) => {
+    try {
+      await apiClient.put(`/services/addons/${addonId}`, toBackend(data));
+      await get().fetchAddons();
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to update add-on' });
+      throw error;
+    }
+  },
+
+  deleteAddon: async (addonId) => {
+    try {
+      const response = await apiClient.delete(`/services/addons/${addonId}`);
+      await get().fetchAddons();
+      return response.data?.message as string | undefined;
+    } catch (error: any) {
+      set({ error: error.response?.data?.message || 'Failed to delete add-on' });
       throw error;
     }
   },

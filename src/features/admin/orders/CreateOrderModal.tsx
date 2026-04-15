@@ -31,7 +31,8 @@ import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { useStaffStore } from '@/stores/useStaffStore';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Wand2, UserSearch } from 'lucide-react';
+import { Loader2, Plus, Trash2, Wand2, UserSearch, Tag } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // ============================================================================
 // VALIDATION SCHEMA
@@ -87,11 +88,12 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const { createOrder } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const {
-    services, categories, serviceLevels,
-    fetchServices, fetchCategories, fetchServiceLevels,
+    services, categories, serviceLevels, addons,
+    fetchServices, fetchCategories, fetchServiceLevels, fetchAddons,
   } = useServiceStore();
   const { staff, fetchStaff } = useStaffStore();
   const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -99,13 +101,17 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       fetchServices();
       fetchCategories();
       fetchServiceLevels();
+      fetchAddons();
       fetchStaff();
+    } else {
+      setSelectedAddonIds([]);
     }
-  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchServiceLevels, fetchStaff]);
+  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchServiceLevels, fetchAddons, fetchStaff]);
 
-  // Active services and levels
+  // Active services, levels, and add-ons
   const activeServices = (Array.isArray(services) ? services : []).filter((s) => s.isActive !== false);
   const activeLevels   = (Array.isArray(serviceLevels) ? serviceLevels : []);
+  const activeAddons   = (Array.isArray(addons) ? addons : []).filter((a) => a.isActive !== false);
 
   const form = useForm<CreateOrderForm>({
     resolver: zodResolver(createOrderSchema),
@@ -141,11 +147,19 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const levelPct      = selectedLevel?.percentageAdjustment ?? 0;
 
   // Pricing
-  const subtotal         = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
-  const pickupFee        = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const deliveryFee      = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const serviceLevelFee  = Math.round(subtotal * levelPct / 100);
-  const total            = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee - watchDiscount);
+  const subtotal        = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
+  const pickupFee       = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const deliveryFee     = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const serviceLevelFee = Math.round(subtotal * levelPct / 100);
+
+  // Add-ons fee: calculated client-side for preview; backend recalculates from DB on submit
+  const selectedAddons  = activeAddons.filter((a) => selectedAddonIds.includes(a.id || a._id));
+  const addonsFee       = selectedAddons.reduce((sum, a) => {
+    const amount = a.type === 'fixed' ? a.value : Math.round(subtotal * a.value / 100);
+    return sum + amount;
+  }, 0);
+
+  const total = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee + addonsFee - watchDiscount);
 
   // ── Auto-fill customer fields from existing customer dropdown ───────────
   const filteredCustomers = (Array.isArray(customers) ? customers : [])
@@ -223,11 +237,13 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
         discount:                 data.discount || 0,
         pickupFee,
         deliveryFee,
+        addons: selectedAddonIds.map((id) => ({ addonId: id })),
         pricing: {
           subtotal,
           pickupFee,
           deliveryFee,
           serviceFee: serviceLevelFee,
+          addOnsFee:  addonsFee,
           discount:   watchDiscount,
           tax:        0,
           total,
@@ -243,6 +259,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       toast.success('Order created successfully');
       form.reset();
       setCustomerSearch('');
+      setSelectedAddonIds([]);
       onOpenChange(false);
       onSuccess?.();
     } catch {
@@ -743,6 +760,52 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
 
           <Separator />
 
+          {/* ── Add-ons ────────────────────────────────────────────────── */}
+          {activeAddons.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Tag className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Add-ons (Optional)</h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {activeAddons.map((addon) => {
+                  const id     = addon.id || addon._id;
+                  const label  = addon.type === 'fixed'
+                    ? `+₦${Number(addon.value).toLocaleString()}`
+                    : `+${addon.value}% of subtotal`;
+                  const checked = selectedAddonIds.includes(id);
+                  return (
+                    <label
+                      key={id}
+                      className={`flex items-start gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
+                        checked ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'
+                      }`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(v) => {
+                          setSelectedAddonIds((prev) =>
+                            v ? [...prev, id] : prev.filter((x) => x !== id)
+                          );
+                        }}
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium leading-none">{addon.name}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+                        {addon.description && (
+                          <p className="text-xs text-muted-foreground mt-0.5 italic">{addon.description}</p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <Separator />
+
           {/* ── Pricing Summary ────────────────────────────────────────── */}
           <div className="space-y-2 rounded-lg border p-4 bg-muted/50">
             <h3 className="text-sm font-semibold">Pricing Summary</h3>
@@ -772,6 +835,16 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                   <span>₦{serviceLevelFee.toLocaleString()}</span>
                 </div>
               )}
+              {selectedAddons.map((addon) => {
+                const id     = addon.id || addon._id;
+                const amount = addon.type === 'fixed' ? addon.value : Math.round(subtotal * addon.value / 100);
+                return (
+                  <div key={id} className="flex justify-between text-purple-700 dark:text-purple-400">
+                    <span>{addon.name} {addon.type === 'percentage' ? `(+${addon.value}%)` : ''}</span>
+                    <span>₦{amount.toLocaleString()}</span>
+                  </div>
+                );
+              })}
               <div className="flex justify-between items-center">
                 <span>Discount</span>
                 <FormField
