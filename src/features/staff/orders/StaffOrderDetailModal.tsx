@@ -144,7 +144,7 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
             <Badge variant={statusVariant(order.status)} className="capitalize text-xs">
               {STATUS_LABELS[order.status] ?? order.status}
             </Badge>
-            <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
+            <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} priorityLevel={order.serviceLevelId?.priorityLevel} />
             {/* Order source badge */}
             {isWalkIn ? (
               <Badge variant="outline" className="text-xs gap-1 border-orange-400 text-orange-600">

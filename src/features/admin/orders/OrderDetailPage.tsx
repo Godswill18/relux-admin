@@ -311,7 +311,7 @@ export default function OrderDetailPage() {
               <h1 className="text-xl sm:text-2xl font-bold truncate">
                 {order.orderNumber || order.code || `Order #${order._id?.substring(0, 8)}`}
               </h1>
-              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
+              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} priorityLevel={order.serviceLevelId?.priorityLevel} />
             </div>
             <p className="text-sm text-muted-foreground">
               Created {order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy · h:mm a') : '—'}

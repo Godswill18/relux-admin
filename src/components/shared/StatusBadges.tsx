@@ -82,20 +82,24 @@ export function PlanActiveBadge({ active }: { active?: boolean }) {
 }
 
 // ============================================================================
-// PRIORITY BADGE — express / premium / rush
-// Renders a compact icon+label pill. Returns null for standard non-rush orders.
+// PRIORITY BADGE — driven by priorityLevel (1-10) from ServiceLevelConfig
+// 1-3: no badge (low, not shown)
+// 4-6: amber  P{n}
+// 7-8: orange P{n} + Zap icon
+// 9-10: red   P{n} + Flame icon (critical)
+// rush=true override → always red Flame (legacy support)
 // ============================================================================
 
 interface PriorityBadgeProps {
   serviceLevel?: string;
   rush?: boolean;
+  priorityLevel?: number;
   /** 'icon' = icon only (tight tables); 'full' = icon + label (default) */
   variant?: 'icon' | 'full';
 }
 
-export function PriorityBadge({ serviceLevel, rush, variant = 'full' }: PriorityBadgeProps) {
-  const level = (serviceLevel || '').toLowerCase();
-
+export function PriorityBadge({ serviceLevel, rush, priorityLevel, variant = 'full' }: PriorityBadgeProps) {
+  // rush override (legacy) → always critical red
   if (rush) {
     return (
       <span
@@ -107,6 +111,52 @@ export function PriorityBadge({ serviceLevel, rush, variant = 'full' }: Priority
       </span>
     );
   }
+
+  // Numeric priority level
+  if (priorityLevel && priorityLevel >= 1) {
+    // 1-3 Low — don't render a badge
+    if (priorityLevel <= 3) return null;
+
+    // 4-6 Medium — amber
+    if (priorityLevel <= 6) {
+      return (
+        <span
+          title={`Priority ${priorityLevel} — Medium`}
+          className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+        >
+          {variant === 'full' && `P${priorityLevel}`}
+          {variant === 'icon' && <Zap className="h-3 w-3 shrink-0" />}
+        </span>
+      );
+    }
+
+    // 7-8 High — orange + Zap
+    if (priorityLevel <= 8) {
+      return (
+        <span
+          title={`Priority ${priorityLevel} — High`}
+          className="inline-flex items-center gap-1 rounded-full border border-orange-300 bg-orange-50 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+        >
+          <Zap className="h-3 w-3 shrink-0" />
+          {variant === 'full' && `P${priorityLevel}`}
+        </span>
+      );
+    }
+
+    // 9-10 Critical — red + Flame
+    return (
+      <span
+        title={`Priority ${priorityLevel} — Critical`}
+        className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-700 dark:bg-red-900/30 dark:text-red-400"
+      >
+        <Flame className="h-3 w-3 shrink-0" />
+        {variant === 'full' && `P${priorityLevel}`}
+      </span>
+    );
+  }
+
+  // Legacy string-based fallback (no priorityLevel set yet)
+  const level = (serviceLevel || '').toLowerCase();
 
   if (level === 'express') {
     return (

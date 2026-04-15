@@ -8,7 +8,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
-  Plus, Pencil, Trash2, Loader2, Percent,
+  Plus, Pencil, Trash2, Loader2, Percent, Gauge,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +37,7 @@ const levelSchema = z.object({
     .max(1000, 'Maximum 1000%'),
   description: z.string().max(200).optional(),
   displayOrder: z.coerce.number().min(0).optional(),
+  priorityLevel: z.coerce.number().min(1).max(10),
 });
 type LevelForm = z.infer<typeof levelSchema>;
 
@@ -62,6 +63,7 @@ function LevelFormDialog({
       percentageAdjustment: initial?.percentageAdjustment ?? 0,
       description:          initial?.description         ?? '',
       displayOrder:         initial?.displayOrder        ?? 0,
+      priorityLevel:        initial?.priorityLevel       ?? 1,
     },
   });
 
@@ -145,6 +147,61 @@ function LevelFormDialog({
                     <Input type="number" min={0} placeholder="0" {...field} />
                   </FormControl>
                   <FormDescription className="text-xs">Lower numbers appear first in dropdowns.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="priorityLevel"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="flex items-center gap-1.5">
+                    <Gauge className="h-3.5 w-3.5" />
+                    Priority Level
+                  </FormLabel>
+                  <FormControl>
+                    <div className="space-y-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        step={1}
+                        placeholder="1"
+                        {...field}
+                        onChange={(e) => {
+                          const v = Math.min(10, Math.max(1, Number(e.target.value) || 1));
+                          field.onChange(v);
+                        }}
+                      />
+                      <div className="flex gap-1">
+                        {[1,2,3,4,5,6,7,8,9,10].map((n) => {
+                          const active = Number(field.value) === n;
+                          const cls = n <= 3
+                            ? 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400'
+                            : n <= 6
+                            ? 'bg-yellow-50 text-yellow-700 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400'
+                            : n <= 8
+                            ? 'bg-orange-50 text-orange-700 border-orange-300 dark:bg-orange-900/30 dark:text-orange-400'
+                            : 'bg-red-50 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-400';
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              onClick={() => field.onChange(n)}
+                              className={`flex-1 text-xs font-bold py-1 rounded border transition-all ${cls} ${active ? 'ring-2 ring-offset-1 ring-current scale-110' : 'opacity-60 hover:opacity-100'}`}
+                            >
+                              {n}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </FormControl>
+                  <FormDescription className="text-xs">
+                    1–3 Low · 4–6 Medium · 7–8 High · 9–10 Critical. Shown as a badge on all orders using this level.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

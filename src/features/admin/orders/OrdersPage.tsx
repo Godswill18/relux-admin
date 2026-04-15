@@ -275,7 +275,7 @@ export default function OrdersPage() {
       cell: ({ row }) => (
         <div className="flex flex-col gap-1">
           <span className="font-medium font-mono">{row.original.orderNumber || '—'}</span>
-          <PriorityBadge serviceLevel={row.original.serviceLevel} rush={row.original.rush} />
+          <PriorityBadge serviceLevel={row.original.serviceLevel} rush={row.original.rush} priorityLevel={row.original.serviceLevelId?.priorityLevel} />
         </div>
       ),
     },
@@ -640,7 +640,7 @@ function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, o
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm font-mono">{order.orderNumber || '—'}</span>
-              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} />
+              <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} priorityLevel={order.serviceLevelId?.priorityLevel} />
               {isWalkIn && <Badge variant="outline" className="text-[10px] px-1.5 py-0">Walk-in</Badge>}
               <CreatedByBadge role={order.createdByRole} source={order.orderSource} />
             </div>

@@ -26,6 +26,7 @@ const normalizeServiceLevel = (item: any) => ({
   percentageAdjustment: item.percentageAdjustment ?? 0,
   description: item.description ?? '',
   displayOrder: item.displayOrder ?? 0,
+  priorityLevel: item.priorityLevel ?? 1,
 });
 
 const normalizeAddon = (item: any) => ({
