@@ -17,6 +17,17 @@ interface Props {
   order: any;
 }
 
+const RECEIPT_SVC_LABELS: Record<string, string> = {
+  'wash-fold': 'Wash & Fold', 'wash-iron': 'Wash & Iron',
+  'iron-only': 'Iron Only',  'dry-clean': 'Dry Clean',
+};
+
+function buildReceiptGroup(item: any): string {
+  const svcType = RECEIPT_SVC_LABELS[item.serviceType] ?? null;
+  if (item.serviceName && svcType && item.serviceName !== svcType) return `${item.serviceName} — ${svcType}`;
+  return item.serviceName || svcType || (item.serviceType && item.serviceType !== 'laundry' ? item.serviceType.replace(/-/g, ' ') : null) || 'Laundry';
+}
+
 export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
   if (!order) return null;
 
@@ -35,18 +46,20 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
     // Capture QR code as image before opening new window
     const canvas = document.getElementById('receipt-qr-canvas') as HTMLCanvasElement | null;
     const qrDataUrl = canvas?.toDataURL('image/png') ?? '';
-
-    // Group items by serviceName for the print template
     const printGroups = new Map<string, any[]>();
     items.forEach((item) => {
-      const key = item.serviceName || item.serviceType || 'Items';
+      const key = buildReceiptGroup(item);
       if (!printGroups.has(key)) printGroups.set(key, []);
       printGroups.get(key)!.push(item);
     });
     const itemsHtml = printGroups.size === 0
       ? '<tr><td colspan="2" style="padding:4px 0;color:#555">No items listed</td></tr>'
       : Array.from(printGroups.entries()).map(([grp, grpItems]) => `
-          <tr><td colspan="2" style="padding:4px 0 2px;font-weight:bold;font-size:11px;border-bottom:1px dashed #aaa">${grp}</td></tr>
+          <tr>
+            <td colspan="2" style="padding:5px 0 2px;font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px dashed #999">
+              ${grp}
+            </td>
+          </tr>
           ${grpItems.map((item) => `
             <tr>
               <td style="padding:2px 0 2px 8px">${item.itemType ?? '—'} × ${item.quantity ?? 1}</td>
@@ -169,21 +182,23 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
 
           {/* Items grouped by service */}
           <div className="text-gray-800">
-            <div className="flex justify-between font-bold text-[10px] border-b border-dashed border-gray-300 pb-1 mb-1">
-              <span>Item</span><span>Amount</span>
-            </div>
             {items.length === 0 ? (
               <p className="text-gray-400 py-1 text-center">No items listed</p>
             ) : (() => {
-              const groups = new Map<string, any[]>();
+              const previewGroups = new Map<string, any[]>();
               items.forEach((item) => {
-                const key = (item as any).serviceName || (item as any).serviceType || 'Items';
-                if (!groups.has(key)) groups.set(key, []);
-                groups.get(key)!.push(item);
+                const key = buildReceiptGroup(item);
+                if (!previewGroups.has(key)) previewGroups.set(key, []);
+                previewGroups.get(key)!.push(item);
               });
-              return Array.from(groups.entries()).map(([grp, grpItems]) => (
-                <div key={grp} className="mb-1.5">
-                  <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500 border-b border-dashed border-gray-200 pb-0.5 mb-0.5">{grp}</p>
+              return Array.from(previewGroups.entries()).map(([grp, grpItems]) => (
+                <div key={grp} className="mb-2">
+                  {/* Service group header */}
+                  <div className="flex justify-between items-center border-b border-dashed border-gray-300 pb-0.5 mb-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-gray-600">{grp}</span>
+                    <span className="text-[9px] text-gray-400">{grpItems.reduce((s, i) => s + ((i as any).quantity ?? 1), 0)} pc(s)</span>
+                  </div>
+                  {/* Item rows */}
                   {grpItems.map((item, i) => (
                     <div key={i} className="flex justify-between pl-2">
                       <span>{(item as any).itemType ?? '—'} × {(item as any).quantity ?? 1}</span>

@@ -224,18 +224,31 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
               <>
                 <Separator className="my-1" />
                 <Section title={`Items (${items.length})`} />
-                <div className="space-y-3 mt-1">
+                <div className="space-y-4 mt-1">
                   {(() => {
+                    const buildGroupKey = (item: any) => {
+                      const svcType = SERVICE_LABELS[item.serviceType] ?? null;
+                      if (item.serviceName && svcType && item.serviceName !== svcType) {
+                        return `${item.serviceName} — ${svcType}`;
+                      }
+                      return item.serviceName || svcType || (item.serviceType && item.serviceType !== 'laundry' ? item.serviceType.replace(/-/g, ' ') : null) || 'Laundry';
+                    };
                     const groups = new Map<string, any[]>();
                     items.forEach((item: any) => {
-                      const key = item.serviceName || serviceLabel(item.serviceType) || item.serviceType || 'Other';
+                      const key = buildGroupKey(item);
                       if (!groups.has(key)) groups.set(key, []);
                       groups.get(key)!.push(item);
                     });
                     return Array.from(groups.entries()).map(([groupName, groupItems]) => (
                       <div key={groupName}>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{groupName}</p>
-                        <div className="rounded-lg border divide-y pl-1 border-l-2 border-l-muted ml-1">
+                        {/* Service group header */}
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-xs font-bold uppercase tracking-wider text-primary">{groupName}</span>
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs text-muted-foreground">{groupItems.reduce((s: number, i: any) => s + (i.quantity ?? 1), 0)} pc(s)</span>
+                        </div>
+                        {/* Items */}
+                        <div className="rounded-lg border divide-y">
                           {groupItems.map((item: any, i: number) => (
                             <div key={item._id ?? i} className="flex items-center justify-between px-3 py-2.5">
                               <div className="flex items-center gap-2 min-w-0">
@@ -246,10 +259,10 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
                               </div>
                               <div className="text-right shrink-0 ml-4">
                                 <p className="text-sm font-medium">
-                                  {money((item.total != null ? item.total : (item.unitPrice ?? 0) * (item.quantity ?? 1)))}
+                                  {money((item.unitPrice ?? 0) * (item.quantity ?? 1))}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {item.quantity ?? 1} × {money(item.unitPrice)}
+                                  ₦{(item.unitPrice ?? 0).toLocaleString()} × {item.quantity ?? 1}
                                 </p>
                               </div>
                             </div>

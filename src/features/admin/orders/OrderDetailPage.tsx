@@ -403,35 +403,43 @@ export default function OrderDetailPage() {
               {items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No items</p>
               ) : (() => {
-                // Group items by serviceName (fallback: serviceLabel or serviceType)
+                // Build group key: "Service Name — Type" e.g. "Washing — Wash & Iron"
+                const buildGroupKey = (item: any) => {
+                  const svcType = SERVICE_LABELS[item.serviceType] ?? null;
+                  if (item.serviceName && svcType && item.serviceName !== svcType) {
+                    return `${item.serviceName} — ${svcType}`;
+                  }
+                  return item.serviceName || svcType || (item.serviceType && item.serviceType !== 'laundry' ? item.serviceType.replace(/-/g, ' ') : null) || 'Laundry';
+                };
                 const groups = new Map<string, any[]>();
                 items.forEach((item: any) => {
-                  const key = item.serviceName || serviceLabel(item.serviceType) || item.serviceType || 'Other';
+                  const key = buildGroupKey(item);
                   if (!groups.has(key)) groups.set(key, []);
                   groups.get(key)!.push(item);
                 });
                 return (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     {Array.from(groups.entries()).map(([groupName, groupItems]) => (
                       <div key={groupName}>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{groupName}</p>
-                        <div className="space-y-2 pl-2 border-l-2 border-muted">
+                        {/* Service group header */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-primary">{groupName}</span>
+                          <div className="flex-1 h-px bg-border" />
+                          <span className="text-xs text-muted-foreground">{groupItems.reduce((s: number, i: any) => s + (i.quantity || 1), 0)} pc(s)</span>
+                        </div>
+                        {/* Items under this service */}
+                        <div className="rounded-lg border divide-y">
                           {groupItems.map((item: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div key={idx} className="flex items-center justify-between px-4 py-3">
                               <div className="min-w-0">
                                 <div className="font-medium">{item.itemType || '—'}</div>
-                                {item.description && item.description !== item.itemType && (
-                                  <div className="text-sm text-muted-foreground mt-0.5">{item.description}</div>
-                                )}
                                 {item.condition && (
-                                  <div className="text-xs text-muted-foreground">Condition: {item.condition}</div>
+                                  <div className="text-xs text-muted-foreground mt-0.5">Condition: {item.condition}</div>
                                 )}
                               </div>
                               <div className="text-right shrink-0 ml-4">
-                                <div className="text-sm text-muted-foreground">× {item.quantity}</div>
-                                {item.unitPrice != null && (
-                                  <div className="font-medium">₦{(item.unitPrice * item.quantity).toLocaleString()}</div>
-                                )}
+                                <div className="font-semibold">₦{((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</div>
+                                <div className="text-xs text-muted-foreground">₦{(item.unitPrice ?? 0).toLocaleString()} × {item.quantity ?? 1}</div>
                               </div>
                             </div>
                           ))}
