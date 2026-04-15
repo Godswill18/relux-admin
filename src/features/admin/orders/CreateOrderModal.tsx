@@ -200,9 +200,13 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   // ── When item (category) changes: auto-fill unit price ──────────────────
   const handleItemChange = (index: number, categoryName: string) => {
     form.setValue(`items.${index}.itemType`, categoryName);
-    const category = (Array.isArray(categories) ? categories : []).find(
-      (c) => c.name === categoryName
-    );
+    // Scope lookup to the service selected for this row so that identically-named
+    // categories across different services resolve to the correct price.
+    const rowServiceId = form.getValues(`items.${index}.serviceId`);
+    const category = (Array.isArray(categories) ? categories : []).find((c) => {
+      const catServiceId = (c.serviceId?._id || c.serviceId)?.toString();
+      return c.name === categoryName && (!rowServiceId || catServiceId === rowServiceId);
+    });
     if (category?.basePrice != null) {
       form.setValue(`items.${index}.unitPrice`, category.basePrice, { shouldValidate: true });
     }
