@@ -4,7 +4,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, CheckCheck, Package, XCircle, Clock, Wallet, Star, Info } from 'lucide-react';
+import { Bell, CheckCheck, Package, XCircle, Clock, Wallet, Star, Info, Truck } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useNotificationStore, AppNotification } from '@/stores/useNotificationStore';
@@ -24,14 +24,16 @@ import {
 
 function getNotifIcon(type: string) {
   switch (type) {
-    case 'order_created':        return <Package className="h-4 w-4 text-blue-500" />;
-    case 'order_cancelled':      return <XCircle className="h-4 w-4 text-red-500" />;
-    case 'order_status_updated': return <Package className="h-4 w-4 text-green-500" />;
-    case 'shift_ending_soon':    return <Clock className="h-4 w-4 text-orange-500" />;
-    case 'wallet_credited':      return <Wallet className="h-4 w-4 text-emerald-500" />;
+    case 'order_created':              return <Package className="h-4 w-4 text-blue-500" />;
+    case 'order_cancelled':            return <XCircle className="h-4 w-4 text-red-500" />;
+    case 'order_status_updated':       return <Package className="h-4 w-4 text-green-500" />;
+    case 'order_ready_for_delivery':   return <Truck className="h-4 w-4 text-emerald-500" />;
+    case 'order_needs_pickup':         return <Truck className="h-4 w-4 text-blue-500" />;
+    case 'shift_ending_soon':          return <Clock className="h-4 w-4 text-orange-500" />;
+    case 'wallet_credited':            return <Wallet className="h-4 w-4 text-emerald-500" />;
     case 'points_earned':
-    case 'referral_rewarded':    return <Star className="h-4 w-4 text-yellow-500" />;
-    default:                     return <Info className="h-4 w-4 text-muted-foreground" />;
+    case 'referral_rewarded':          return <Star className="h-4 w-4 text-yellow-500" />;
+    default:                           return <Info className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
@@ -44,6 +46,8 @@ function getNotifRoute(notif: AppNotification, role?: string): string | null {
   const isStaff = role === 'staff' || role === 'receptionist';
   const base = isStaff ? '/staff' : '/admin';
 
+  const isDelivery = role === 'delivery';
+
   switch (notif.type) {
     case 'order_created':
       return orderId ? `${base}/orders/${orderId}` : `${base}/orders`;
@@ -51,6 +55,9 @@ function getNotifRoute(notif: AppNotification, role?: string): string | null {
       return orderId ? `${base}/orders/${orderId}` : `${base}/orders`;
     case 'order_status_updated':
       return orderId ? `${base}/orders/${orderId}` : `${base}/orders`;
+    case 'order_ready_for_delivery':
+    case 'order_needs_pickup':
+      return isDelivery ? '/delivery/orders' : (orderId ? `${base}/orders/${orderId}` : `${base}/orders`);
     case 'shift_ending_soon':
       return `/admin/shifts`;
     default:

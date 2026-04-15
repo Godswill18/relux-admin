@@ -14,6 +14,7 @@ import { OrderStatusBadge } from '@/components/shared/StatusBadges';
 import { format, isSameDay } from 'date-fns';
 import apiClient from '@/lib/api/client';
 import { toast } from 'sonner';
+import socketClient from '@/lib/socket/client';
 
 // ============================================================================
 // METRIC CARD
@@ -76,6 +77,26 @@ export default function DeliveryDashboard() {
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  // Real-time: refresh dashboard when a delivery-relevant event fires
+  useEffect(() => {
+    const socket = socketClient.getSocket();
+    if (!socket) return;
+
+    const refresh = () => loadOrders();
+
+    socket.on('order:status-updated',   refresh);
+    socket.on('order:created',          refresh);
+    socket.on('order:pickup-claimed',   refresh);
+    socket.on('order:delivery-claimed', refresh);
+
+    return () => {
+      socket.off('order:status-updated',   refresh);
+      socket.off('order:created',          refresh);
+      socket.off('order:pickup-claimed',   refresh);
+      socket.off('order:delivery-claimed', refresh);
+    };
+  }, [loadOrders]);
 
   const today = new Date();
 

@@ -81,7 +81,8 @@ export const initializeSocketListeners = () => {
     console.log('🔔 New notification:', notification);
 
     const notifType: string = notification.type ?? '';
-    const isAlert = ['order_created', 'order_cancelled'].includes(notifType);
+    const isDeliveryAlert = ['order_ready_for_delivery', 'order_needs_pickup'].includes(notifType);
+    const isAlert   = isDeliveryAlert || ['order_created', 'order_cancelled'].includes(notifType);
     const isWarning = notifType === 'shift_ending_soon';
 
     playNotificationSound(isAlert ? 'alert' : isWarning ? 'warning' : 'info');
@@ -96,7 +97,12 @@ export const initializeSocketListeners = () => {
       createdAt: notification.createdAt ?? new Date().toISOString(),
     });
 
-    if (isAlert) {
+    if (isDeliveryAlert) {
+      toast.warning(notification.title, {
+        description: notification.body,
+        duration: 8000, // longer duration for delivery alerts
+      });
+    } else if (isAlert) {
       toast.warning(notification.title, { description: notification.body });
     } else if (isWarning) {
       toast.warning(notification.title, { description: notification.body });
