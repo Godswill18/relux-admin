@@ -16,6 +16,16 @@ import {
 } from '@/components/ui/dialog';
 import apiClient from '@/lib/api/client';
 
+// Resolve a /uploads/ path to an absolute URL using the backend origin
+const SERVER_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1')
+  .replace(/\/api\/v\d+\/?$/, '');
+
+function resolveImageUrl(imageUrl: string | undefined): string {
+  if (!imageUrl) return '';
+  if (imageUrl.startsWith('http')) return imageUrl;
+  return `${SERVER_ORIGIN}${imageUrl}`;
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AnnouncementItem {
@@ -103,7 +113,8 @@ export function AnnouncementBanners({ items }: BannerProps) {
   return (
     <div className="space-y-2 mb-4">
       {visible.map((item) => {
-        const isPromo = item.type === 'promotion';
+        const isPromo  = item.type === 'promotion';
+        const imgSrc   = resolveImageUrl(item.imageUrl);
         return (
           <div
             key={item._id}
@@ -113,15 +124,15 @@ export function AnnouncementBanners({ items }: BannerProps) {
                 : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30'
             }`}
           >
-            {item.imageUrl && (
+            {imgSrc && (
               <img
-                src={item.imageUrl}
+                src={imgSrc}
                 alt=""
                 className="h-10 w-10 rounded object-cover shrink-0"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
-            {!item.imageUrl && (
+            {!imgSrc && (
               <Megaphone className={`h-5 w-5 mt-0.5 shrink-0 ${isPromo ? 'text-purple-600' : 'text-blue-600'}`} />
             )}
             <div className="flex-1 min-w-0">
@@ -200,16 +211,17 @@ export function AnnouncementPopups({ items }: PopupsProps) {
 
   if (!current) return null;
 
-  const isPromo = current.type === 'promotion';
+  const isPromo     = current.type === 'promotion';
+  const currentImg  = resolveImageUrl(current.imageUrl);
 
   return (
     <Dialog open={!!current} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="sm:max-w-md p-0 overflow-hidden">
         {/* Image banner */}
-        {current.imageUrl && (
+        {currentImg && (
           <div className="w-full aspect-video bg-muted">
             <img
-              src={current.imageUrl}
+              src={currentImg}
               alt={current.title}
               className="w-full h-full object-cover"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
