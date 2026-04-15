@@ -21,6 +21,7 @@ import {
   FileText,
   Shield,
   Settings,
+  Megaphone,
 } from 'lucide-react';
 import { BaseLayout, NavItem } from './BaseLayout';
 import { StaffLayout } from './StaffLayout';
@@ -114,6 +115,12 @@ const ALL_ADMIN_NAV: AdminNavItem[] = [
     path: '/admin/payroll',
     icon: <Wallet className="h-4 w-4" />,
     permission: Permission.VIEW_PAYROLL,
+  },
+  {
+    label: 'Announcements',
+    path: '/admin/announcements',
+    icon: <Megaphone className="h-4 w-4" />,
+    permission: Permission.SEND_NOTIFICATIONS,
   },
   {
     label: 'Chat',

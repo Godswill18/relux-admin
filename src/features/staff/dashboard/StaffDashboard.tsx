@@ -18,6 +18,11 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import apiClient from '@/lib/api/client';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import {
+  useFetchAnnouncements,
+  AnnouncementBanners,
+  AnnouncementPopups,
+} from '@/components/shared/AnnouncementSystem';
 
 // ============================================================================
 // HELPERS
@@ -71,6 +76,7 @@ function isToday(dateStr: string) {
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { banners, popups } = useFetchAnnouncements();
 
   const [activeOrders, setActiveOrders]     = useState<any[]>([]);
   const [completedToday, setCompletedToday] = useState(0);
@@ -138,6 +144,10 @@ export default function StaffDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* ── Announcements ──────────────────────────────────────────────────── */}
+      <AnnouncementBanners items={banners} />
+      <AnnouncementPopups  items={popups} />
+
       {/* ── Welcome Header ─────────────────────────────────────────────────── */}
       <div>
         <h1 className="text-3xl font-bold">Welcome back, {user?.name}!</h1>

@@ -41,6 +41,11 @@ import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { ORDER_STATUS_CONFIG, getOrderStatusConfig } from '@/lib/statusConfig';
+import {
+  useFetchAnnouncements,
+  AnnouncementBanners,
+  AnnouncementPopups,
+} from '@/components/shared/AnnouncementSystem';
 
 // ============================================================================
 // CONSTANTS — derived from shared status config
@@ -144,6 +149,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
+  const { banners, popups } = useFetchAnnouncements();
   const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const { fetchServices } = useServiceStore();
@@ -310,6 +316,10 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* ── Announcements ──────────────────────────────────────────────────── */}
+      <AnnouncementBanners items={banners} />
+      <AnnouncementPopups  items={popups} />
+
       {/* ------------------------------------------------------------------ */}
       {/* Page Header */}
       {/* ------------------------------------------------------------------ */}

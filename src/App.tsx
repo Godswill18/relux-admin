@@ -32,6 +32,7 @@ import ChatPage from '@/features/admin/chat/ChatPage';
 import ReportsPage from '@/features/admin/reports/ReportsPage';
 import AuditPage from '@/features/admin/audit/AuditPage';
 import SettingsPage from '@/features/admin/settings/SettingsPage';
+import AnnouncementsPage from '@/features/admin/announcements/AnnouncementsPage';
 import AdminAttendancePage from '@/features/admin/attendance/AdminAttendancePage';
 import StaffDashboard from '@/features/staff/dashboard/StaffDashboard';
 import StaffOrdersPage from '@/features/staff/orders/StaffOrdersPage';
@@ -277,6 +278,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredPermissions={[Permission.MANAGE_SETTINGS]}>
                   <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="announcements"
+              element={
+                <ProtectedRoute requiredPermissions={[Permission.SEND_NOTIFICATIONS]}>
+                  <AnnouncementsPage />
                 </ProtectedRoute>
               }
             />
