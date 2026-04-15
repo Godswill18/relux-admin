@@ -282,17 +282,22 @@ export default function OrdersPage() {
     {
       id: 'customer',
       header: ({ column }) => <DataTableColumnHeader column={column} title="Customer" />,
-      cell: ({ row }) => (
-        <div className="text-sm">
-          <div>{row.original.customer?.name || row.original.walkInCustomer?.name || '—'}</div>
-          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-            <span className="text-xs text-muted-foreground">
-              {row.original.orderSource === 'offline' ? 'Walk-in' : 'Online'}
-            </span>
-            <CreatedByBadge role={row.original.createdByRole} source={row.original.orderSource} />
+      cell: ({ row }) => {
+        const o = row.original;
+        // Offline walk-in orders store staff's userId as customer placeholder —
+        // always use walkInCustomer.name for those; only use customer.name for online orders.
+        const name = o.walkInCustomer?.name || o.customer?.name || '—';
+        return (
+          <div className="text-sm">
+            <div>{name}</div>
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+              <span className="text-xs text-muted-foreground">
+                {o.orderSource === 'offline' ? 'Walk-in' : 'Online'}
+              </span>
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       accessorKey: 'items',
@@ -614,7 +619,8 @@ interface AdminMobileCardProps {
 
 function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, onView, onEdit, onAssign, onDelete, onMarkCompleted, onSwipeNext, onSwipePrev, nextStatusLabel, prevStatusLabel }: AdminMobileCardProps) {
   const isWalkIn     = order.orderSource === 'offline';
-  const customerName = order.customer?.name || order.walkInCustomer?.name || '—';
+  // Offline orders store staff's userId as customer placeholder — always prefer walkInCustomer.name
+  const customerName = order.walkInCustomer?.name || order.customer?.name || '—';
   const items: any[] = order.items || [];
   const total        = order.pricing?.total || order.total || 0;
   const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
@@ -732,7 +738,7 @@ function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
       </span>
     );
   }
-  if (role === 'admin' || role === 'manager' || role === 'receptionist') {
+  if (role === 'admin' || role === 'manager' ) {
     return (
       <span className="inline-flex items-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 px-1.5 py-0 text-[10px] font-medium border border-violet-200 dark:border-violet-800">
         Admin

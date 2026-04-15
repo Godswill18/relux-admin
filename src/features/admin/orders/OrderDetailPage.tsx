@@ -809,11 +809,11 @@ export default function OrderDetailPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex justify-between">
+              {/* <div className="flex justify-between">
                 <span className="text-muted-foreground">Order Type</span>
                 <span className="font-medium capitalize">{order.orderType?.replace('-', ' ') || '—'}</span>
-                {/* {console.log(order)} */}
-              </div>
+                {console.log(order)}
+              </div> */}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Default Service</span>
                 <span className="font-medium capitalize">{serviceLabel(order.serviceType) || '—'}</span>
