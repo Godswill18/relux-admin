@@ -361,6 +361,7 @@ export default function OrderDetailPage() {
       />
 
       <EditOrderModal
+        key={order?._id || 'no-order'}
         open={isEditOpen}
         onOpenChange={setIsEditOpen}
         order={order}

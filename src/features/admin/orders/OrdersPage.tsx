@@ -445,9 +445,11 @@ export default function OrdersPage() {
       {/* ── Modals ──────────────────────────────────────────────────────── */}
       <CreateOrderModal open={isCreateOpen} onOpenChange={setIsCreateOpen} onSuccess={refresh} />
       <EditOrderModal
+        key={editTarget?._id || 'no-order'}
         open={!!editTarget}
         onOpenChange={(o) => !o && setEditTarget(null)}
         order={editTarget}
+        onSaved={() => refresh()}
       />
       <AssignStaffModal
         open={!!assignTarget}
