@@ -147,9 +147,12 @@ export default function OrderDetailPage() {
     return () => { socket.off('order:timer-updated', handler); };
   }, [id]);
 
-  // Fetch customer wallet balance whenever order is partial
+  // Fetch customer wallet balance for partial or wallet/pay-later unpaid orders
   useEffect(() => {
-    if (!order || order.paymentStatus !== 'partial') return;
+    if (!order) return;
+    const isPartial = order.paymentStatus === 'partial';
+    const isWalletUnpaid = order.paymentStatus === 'unpaid' && ['pay-later', 'wallet'].includes(order.payment?.method);
+    if (!isPartial && !isWalletUnpaid) return;
     const customerId = order.customer?.customerId?._id
       || (typeof order.customer?.customerId === 'string' ? order.customer.customerId : null)
       || order.customerId;
@@ -160,7 +163,7 @@ export default function OrderDetailPage() {
         setWalletBalance(bal);
       })
       .catch(() => setWalletBalance(null));
-  }, [order?.paymentStatus, order?.customer, order?.customerId]);
+  }, [order?.paymentStatus, order?.payment?.method, order?.customer, order?.customerId]);
 
   // Charge remaining balance from customer's wallet
   const handlePayBalance = async () => {
@@ -504,28 +507,31 @@ export default function OrderDetailPage() {
                 </div>
               </div>
 
-              {/* ── Partial Payment Panel ───────────────────────────────── */}
-              {order.paymentStatus === 'partial' && (() => {
-                const alreadyPaid = payment.amount || 0;
+              {/* ── Wallet Deduction Panel (partial or wallet/pay-later unpaid) ── */}
+              {(order.paymentStatus === 'partial' || (order.paymentStatus === 'unpaid' && ['pay-later', 'wallet'].includes(payment.method))) && (() => {
+                const isFullyUnpaid = order.paymentStatus === 'unpaid';
+                const alreadyPaid   = isFullyUnpaid ? 0 : (payment.amount || 0);
                 const orderTotal  = pricing.total || order.total || 0;
                 const balanceDue  = Math.max(0, Math.round((orderTotal - alreadyPaid) * 100) / 100);
                 return (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-3">
                     <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium text-sm">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
-                      Partial Payment — Balance Outstanding
+                      {isFullyUnpaid ? 'Payment Due — Deduct from Wallet' : 'Partial Payment — Balance Outstanding'}
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Previously Paid</p>
-                        <p className="font-semibold text-green-700">₦{alreadyPaid.toLocaleString()}</p>
-                      </div>
-                      <div>
+                      {!isFullyUnpaid && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Previously Paid</p>
+                          <p className="font-semibold text-green-700">₦{alreadyPaid.toLocaleString()}</p>
+                        </div>
+                      )}
+                      <div className={isFullyUnpaid ? 'col-span-2' : ''}>
                         <p className="text-xs text-muted-foreground">Order Total</p>
                         <p className="font-semibold">₦{orderTotal.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Balance Due</p>
+                        <p className="text-xs text-muted-foreground">{isFullyUnpaid ? 'Amount Due' : 'Balance Due'}</p>
                         <p className="font-semibold text-destructive">₦{balanceDue.toLocaleString()}</p>
                       </div>
                     </div>
@@ -538,7 +544,7 @@ export default function OrderDetailPage() {
                       {isChargingWallet
                         ? <Loader2 className="h-4 w-4 animate-spin" />
                         : <Wallet className="h-4 w-4" />}
-                      Pay ₦{balanceDue.toLocaleString()} from Wallet
+                      Deduct ₦{balanceDue.toLocaleString()} from Wallet
                       {walletBalance !== null && (
                         <span className="ml-auto text-xs opacity-75">
                           Balance: ₦{walletBalance.toLocaleString()}
