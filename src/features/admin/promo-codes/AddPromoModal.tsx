@@ -38,7 +38,8 @@ const addPromoSchema = z.object({
     .transform((v) => v.toUpperCase().trim()),
   type: z.enum(['fixed', 'percent'], { required_error: 'Select a discount type' }),
   value: z.coerce.number().min(1, 'Value must be at least 1'),
-  usageLimit: z.coerce.number().min(0).optional(),
+  usageLimit: z.coerce.number().min(1).optional(),
+  usagePerUser: z.coerce.number().min(1).default(1),
   expiresAt: z.string().optional(),
 });
 
@@ -63,6 +64,7 @@ export function AddPromoModal({ open, onOpenChange }: AddPromoModalProps) {
       type: 'percent',
       value: 10,
       usageLimit: undefined,
+      usagePerUser: 1,
       expiresAt: '',
     },
   });
@@ -78,6 +80,7 @@ export function AddPromoModal({ open, onOpenChange }: AddPromoModalProps) {
         value: data.value,
       };
       if (data.usageLimit && data.usageLimit > 0) payload.usageLimit = data.usageLimit;
+      payload.usagePerUser = data.usagePerUser ?? 1;
       if (data.expiresAt) payload.expiresAt = data.expiresAt;
 
       await createPromoCode(payload as any);
@@ -167,11 +170,11 @@ export function AddPromoModal({ open, onOpenChange }: AddPromoModalProps) {
               name="usageLimit"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Usage Limit (optional)</FormLabel>
+                  <FormLabel>Total Usage Limit</FormLabel>
                   <FormControl>
                     <Input
                       type="number"
-                      min={0}
+                      min={1}
                       placeholder="Unlimited"
                       {...field}
                       value={field.value ?? ''}
@@ -184,18 +187,37 @@ export function AddPromoModal({ open, onOpenChange }: AddPromoModalProps) {
 
             <FormField
               control={form.control}
-              name="expiresAt"
+              name="usagePerUser"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Expiry Date (optional)</FormLabel>
+                  <FormLabel>Uses Per Customer</FormLabel>
                   <FormControl>
-                    <Input type="date" min={new Date().toISOString().split('T')[0]} {...field} />
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="1"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name="expiresAt"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Expiry Date (optional)</FormLabel>
+                <FormControl>
+                  <Input type="date" min={new Date().toISOString().split('T')[0]} {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <div className="flex justify-end gap-2 pt-2">
             <Button

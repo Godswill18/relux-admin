@@ -135,10 +135,35 @@ export default function PromoCodesPage() {
       ),
     },
     {
-      accessorKey: 'usageLimit',
-      header: 'Usage Limit',
+      id: 'usage',
+      header: 'Usage',
+      cell: ({ row }) => {
+        const used  = row.original.usageCount ?? 0;
+        const limit = row.original.usageLimit;
+        const pct   = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+        const atLimit = limit != null && used >= limit;
+        return (
+          <div className="space-y-1 min-w-[80px]">
+            <span className={`text-sm font-medium ${atLimit ? 'text-destructive' : ''}`}>
+              {used}{limit != null ? ` / ${limit}` : ''}
+            </span>
+            {limit != null && (
+              <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${atLimit ? 'bg-destructive' : 'bg-primary'}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'usagePerUser',
+      header: 'Per Customer',
       cell: ({ row }) => (
-        <span>{row.original.usageLimit ?? '∞'}</span>
+        <span className="text-sm">{row.original.usagePerUser ?? 1}×</span>
       ),
     },
     {
@@ -299,11 +324,14 @@ export default function PromoCodesPage() {
                               ? `${promo.value}%`
                               : `₦${(promo.value ?? 0).toLocaleString()}`}
                           </span>
-                          {promo.usageLimit != null && (
-                            <span className="text-muted-foreground text-xs">
-                              Limit: {promo.usageLimit}
-                            </span>
-                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                          <span>
+                            Used: <strong className={promo.usageLimit != null && (promo.usageCount ?? 0) >= promo.usageLimit ? 'text-destructive' : 'text-foreground'}>
+                              {promo.usageCount ?? 0}{promo.usageLimit != null ? ` / ${promo.usageLimit}` : ''}
+                            </strong>
+                          </span>
+                          <span>Per customer: <strong className="text-foreground">{promo.usagePerUser ?? 1}×</strong></span>
                         </div>
                         {expiresDate ? (
                           <p className={`text-xs ${expired ? 'text-destructive' : 'text-muted-foreground'}`}>

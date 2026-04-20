@@ -16,6 +16,8 @@ export interface PromoCode {
   type: 'fixed' | 'percent';
   value: number;
   usageLimit?: number;
+  usagePerUser?: number;
+  usageCount?: number;
   expiresAt?: string;
   active: boolean;
   createdAt: string;
