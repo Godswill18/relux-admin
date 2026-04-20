@@ -4,12 +4,12 @@
 //       Ready · Out for Delivery · Delivered · Completed · Cancelled
 // ============================================================================
 
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine,
-  CheckCircle2, Search, Package, User,
+  CheckCircle2, Search, Package, User, Loader2,
   Clock, Check, Truck, Settings2, Waves, Zap,
   PackageCheck, Navigation, Home, XCircle,
 } from 'lucide-react';
@@ -107,7 +107,10 @@ export default function OrdersPage() {
   const [isLoading,    setIsLoading]    = useState(false);
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [listKey,      setListKey]      = useState(0);
-  const [search,       setSearch]       = useState('');
+  const [search,          setSearch]          = useState('');
+  const [searchResults,   setSearchResults]   = useState<any[]>([]);
+  const [isSearching,     setIsSearching]     = useState(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modals
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -186,7 +189,6 @@ export default function OrdersPage() {
     let cancelled = false;
     const fetch = async () => {
       setIsLoading(true);
-      setSearch('');
       try {
         const res = await apiClient.get('/orders', {
           params: { statusTab: activeTab, limit: '100' },
@@ -205,15 +207,27 @@ export default function OrdersPage() {
     return () => { cancelled = true; };
   }, [activeTab, refreshKey, listKey]);
 
-  const filteredOrders = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return orders;
-    return orders.filter((o) => {
-      const num  = (o.orderNumber ?? '').toLowerCase();
-      const name = (o.customer?.name ?? o.walkInCustomer?.name ?? '').toLowerCase();
-      return num.includes(q) || name.includes(q);
-    });
-  }, [orders, search]);
+  // ── Global cross-tab search (debounced) ──────────────────────────────────
+  useEffect(() => {
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    const q = search.trim();
+    if (!q) { setSearchResults([]); return; }
+    searchDebounce.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await apiClient.get('/orders', { params: { search: q, limit: '50' } });
+        const raw = res.data?.data;
+        setSearchResults(Array.isArray(raw) ? raw : raw?.orders ?? []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+    return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
+  }, [search]);
+
+  const filteredOrders = useMemo(() => orders, [orders]);
 
   const handleMarkCompleted = async (order: any) => {
     try {
@@ -488,8 +502,76 @@ export default function OrdersPage() {
         ))}
       </div>
 
+      {/* ── Global Search ───────────────────────────────────────────────── */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        {isSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+        <Input
+          placeholder="Search by order number or customer name across all statuses…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 pr-9"
+        />
+      </div>
+
+      {/* ── Search Results (cross-tab) ───────────────────────────────────── */}
+      {search.trim() && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${search.trim()}"`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {searchResults.length === 0 && !isSearching ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground text-sm">
+                <Package className="h-8 w-8 opacity-40" />
+                No orders found
+              </div>
+            ) : (
+              <div className="divide-y">
+                {searchResults.map((order) => (
+                  <div
+                    key={order._id}
+                    className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/admin/orders/${order._id}`)}
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono font-semibold text-sm">{order.orderNumber || '—'}</span>
+                        <OrderStatusBadge status={order.status} />
+                        <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} priorityLevel={order.serviceLevelId?.priorityLevel} />
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <User className="h-3 w-3" />
+                        {order.walkInCustomer?.name || order.customer?.name || '—'}
+                        <span className="text-muted-foreground/60">·</span>
+                        <span>₦{(order.pricing?.total || order.total || 0).toLocaleString()}</span>
+                        <span className="text-muted-foreground/60">·</span>
+                        <PaymentStatusBadge status={order.paymentStatus || order.payment?.status || 'unpaid'} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={(e) => { e.stopPropagation(); setActiveTab(order.status as StatusKey); setSearch(''); }}
+                      >
+                        Go to tab
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── 11-Status Tab Strip ─────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusKey)}>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as StatusKey); setSearch(''); }}>
         <div className="w-full overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
@@ -518,17 +600,6 @@ export default function OrdersPage() {
 
         {STATUS_TABS.map((tab) => (
           <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by order number or customer name…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-
             {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {isLoading ? (
