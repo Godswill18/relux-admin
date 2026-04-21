@@ -68,6 +68,21 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
           `).join('')}
         `).join('');
 
+    const addons: any[] = order.addons || [];
+    const addonsHtml = addons.length === 0 ? '' : `
+      <tr>
+        <td colspan="2" style="padding:5px 0 2px;font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px dashed #999">
+          Add-ons
+        </td>
+      </tr>
+      ${addons.map((addon) => `
+        <tr>
+          <td style="padding:2px 0 2px 8px">${addon.name || addon.addonId?.name || '—'}</td>
+          <td style="text-align:right;padding:2px 0">+₦${(addon.calculatedAmount ?? 0).toLocaleString()}</td>
+        </tr>
+      `).join('')}
+    `;
+
     const extraFees = [
       pricing.pickupFee > 0 ? `<div class="row"><span>Pickup Fee</span><span>₦${Number(pricing.pickupFee).toLocaleString()}</span></div>` : '',
       pricing.deliveryFee > 0 ? `<div class="row"><span>Delivery Fee</span><span>₦${Number(pricing.deliveryFee).toLocaleString()}</span></div>` : '',
@@ -122,7 +137,7 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
   <hr/>
   <table>
     <thead><tr><th>Item</th><th class="right">Amount</th></tr></thead>
-    <tbody>${itemsHtml}</tbody>
+    <tbody>${itemsHtml}${addonsHtml}</tbody>
   </table>
   <hr/>
   ${extraFees}
@@ -209,6 +224,21 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
               ));
             })()}
           </div>
+
+          {/* Add-ons */}
+          {(order.addons || []).length > 0 && (
+            <div className="text-gray-800">
+              <div className="text-[9px] font-bold uppercase tracking-wide text-gray-600 border-b border-dashed border-gray-300 pb-0.5 mb-1">
+                Add-ons
+              </div>
+              {(order.addons as any[]).map((addon: any, idx: number) => (
+                <div key={idx} className="flex justify-between pl-2">
+                  <span>{addon.name || addon.addonId?.name || '—'}</span>
+                  <span>+₦{(addon.calculatedAmount ?? 0).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <Separator className="border-dashed border-gray-300" />
 

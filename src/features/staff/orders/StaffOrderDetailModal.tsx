@@ -219,6 +219,22 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
               <Row icon={FileText} label="Special Instructions" value={order.specialInstructions} />
             )}
 
+            {/* ── Add-ons ────────────────────────────────────────────────── */}
+            {(order.addons || []).length > 0 && (
+              <>
+                <Separator className="my-1" />
+                <Section title={`Add-ons (${(order.addons as any[]).length})`} />
+                <div className="rounded-lg border divide-y mt-1">
+                  {(order.addons as any[]).map((addon: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between px-3 py-2.5">
+                      <span className="text-sm font-medium">{addon.name || addon.addonId?.name || '—'}</span>
+                      <span className="text-sm font-semibold shrink-0 ml-4">+₦{(addon.calculatedAmount ?? 0).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             {/* ── Items ──────────────────────────────────────────────────── */}
             {items.length > 0 && (
               <>
