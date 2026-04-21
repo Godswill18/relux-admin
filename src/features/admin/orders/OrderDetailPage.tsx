@@ -404,6 +404,21 @@ export default function OrderDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {(order.addons || []).length > 0 && (
+                <div className="mb-4 pb-4 border-b">
+                  <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">Add-ons</p>
+                  <div className="rounded-lg border divide-y">
+                    {(order.addons as any[]).map((addon: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between px-4 py-2.5">
+                        <div className="text-sm font-medium">{addon.name || addon.addonId?.name || '—'}</div>
+                        <div className="text-sm font-semibold shrink-0 ml-4">
+                          +₦{(addon.calculatedAmount ?? 0).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No items</p>
               ) : (() => {
