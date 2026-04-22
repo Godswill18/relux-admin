@@ -5,14 +5,14 @@
 // Badge counts are staff-specific, fetched on load + every 30s + via socket
 // ============================================================================
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { useNavigate } from 'react-router-dom';
 import {
   MoreHorizontal, Plus, Edit, Eye, CheckCircle, Search, Package,
   User, ScanLine, CheckCircle2, UserCheck, Users,
   Clock, Check, Truck, Settings2, Waves, Zap,
-  PackageCheck, Navigation, Home, XCircle, ArrowRight,
+  PackageCheck, Navigation, Home, XCircle, ArrowRight, Loader2,
 } from 'lucide-react';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuTrigger,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -157,6 +157,9 @@ export default function StaffOrdersPage() {
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [listKey,      setListKey]      = useState(0);
   const [search,       setSearch]       = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching,   setIsSearching]   = useState(false);
+  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modals
   const [detailOrder,  setDetailOrder]  = useState<any>(null);
@@ -272,15 +275,26 @@ export default function StaffOrdersPage() {
     return () => { cancelled = true; };
   }, [activeTab, viewScope, refreshKey, listKey]);
 
-  const filteredOrders = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return orders;
-    return orders.filter((o) => {
-      const num  = (o.orderNumber ?? '').toLowerCase();
-      const name = customerName(o).toLowerCase();
-      return num.includes(q) || name.includes(q);
-    });
-  }, [orders, search]);
+  // Cross-tab search
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) { setSearchResults([]); setIsSearching(false); return; }
+    if (searchDebounce.current) clearTimeout(searchDebounce.current);
+    searchDebounce.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await apiClient.get('/orders', { params: { search: q, limit: '20' } });
+        const raw = res.data.data;
+        setSearchResults(Array.isArray(raw) ? raw : raw?.orders ?? []);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+  }, [search]);
+
+  const filteredOrders = useMemo(() => orders, [orders]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const myTotal   = Object.entries(counts)
@@ -630,8 +644,125 @@ export default function StaffOrdersPage() {
         </Card>
       </div>
 
+      {/* ── Global Cross-Tab Search ──────────────────────────────────────── */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search orders by number or customer name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9 pr-9"
+        />
+        {isSearching && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+        )}
+      </div>
+
+      {/* ── Cross-Tab Search Results ─────────────────────────────────────── */}
+      {search.trim() && (
+        <div className="rounded-lg border bg-card shadow-sm">
+          <div className="px-4 py-2 border-b flex items-center justify-between">
+            <span className="text-sm font-medium">
+              {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} across all tabs`}
+            </span>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSearch('')}>
+              Clear
+            </Button>
+          </div>
+          {!isSearching && searchResults.length === 0 && (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">No orders found</div>
+          )}
+          {searchResults.map((order) => {
+            const total = order.pricing?.total ?? order.total ?? 0;
+            const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
+            const tabKey = order.status as StatusKey;
+            const next = NEXT_STATUS[tabKey];
+            const nextLabel = NEXT_STATUS_LABEL[tabKey];
+            const isPending = tabKey === 'pending';
+            const isReadOnly = tabKey === 'delivered' || tabKey === 'completed' || tabKey === 'cancelled';
+            return (
+              <div
+                key={order._id}
+                className="flex items-center gap-3 px-4 py-3 border-b last:border-0 hover:bg-muted/40 transition-colors cursor-pointer"
+                onClick={() => setDetailOrder(order)}
+              >
+                {/* Order info */}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-semibold text-sm">{order.orderNumber}</span>
+                    <OrderStatusBadge status={order.status} />
+                  </div>
+                  <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                    <span>{customerName(order)}</span>
+                    <PaymentStatusBadge status={payStatus} />
+                    {total > 0 && <span className="font-medium text-foreground">₦{Number(total).toLocaleString()}</span>}
+                  </div>
+                </div>
+
+                {/* Next-step button */}
+                {isPending && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); setAcceptTarget(order); }}
+                  >
+                    <CheckCircle className="mr-1 h-3 w-3" />
+                    Pick Order
+                  </Button>
+                )}
+                {!isPending && !isReadOnly && next && nextLabel && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7 shrink-0"
+                    onClick={(e) => { e.stopPropagation(); handleNextStep(order); }}
+                  >
+                    <ArrowRight className="mr-1 h-3 w-3" />
+                    {nextLabel}
+                  </Button>
+                )}
+
+                {/* Actions dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      className="h-7 w-7 p-0 shrink-0"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setDetailOrder(order); }}>
+                      <Eye className="mr-2 h-4 w-4" /> View Details
+                    </DropdownMenuItem>
+                    {isPending && (
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setAcceptTarget(order); }}>
+                        <CheckCircle className="mr-2 h-4 w-4" /> Pick Order
+                      </DropdownMenuItem>
+                    )}
+                    {!isPending && !isReadOnly && (
+                      <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setStatusTarget(order); }}>
+                        <Edit className="mr-2 h-4 w-4" /> Update Status
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSearch(''); setActiveTab(tabKey); }}>
+                      <ArrowRight className="mr-2 h-4 w-4" /> Go to {STATUS_TABS.find((t) => t.key === tabKey)?.label ?? tabKey} tab
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* ── 11-Status Tab Strip ──────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusKey)}>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as StatusKey); setSearch(''); }}>
         <div className="w-full overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
@@ -664,17 +795,6 @@ export default function StaffOrdersPage() {
                 These are unassigned orders. Click <strong>Pick Order</strong> to claim one.
               </div>
             )}
-
-            {/* ── Search ─────────────────────────────────────────────── */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by order number or customer name…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
 
             {/* ── Mobile cards ───────────────────────────────────────── */}
             <div className="md:hidden space-y-3">
