@@ -153,50 +153,39 @@ export default function AdminDashboard() {
   const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();
   const { fetchServices } = useServiceStore();
-  const [activeOrdersCount, setActiveOrdersCount] = useState<number | null>(null);
+
+  interface DashStats {
+    totalRevenue: number;
+    todayRevenue: number;
+    totalOrders: number;
+    activeOrders: number;
+    pendingPayments: number;
+    todayOrders: number;
+  }
+  const [dashStats, setDashStats] = useState<DashStats | null>(null);
+  const [totalCustomers, setTotalCustomers] = useState<number | null>(null);
 
   useEffect(() => {
     fetchOrders().catch(console.error);
     fetchCustomers().catch(console.error);
     fetchServices().catch(console.error);
-    // Fetch accurate DB count of active (non-delivered/cancelled) orders
-    apiClient.get('/orders/counts')
-      .then((res) => setActiveOrdersCount(res.data?.data?.active ?? res.data?.data?.total ?? null))
+    apiClient.get('/orders/dashboard-stats')
+      .then((res) => setDashStats(res.data?.data ?? null))
+      .catch(() => {});
+    apiClient.get('/users/customer-stats')
+      .then((res) => setTotalCustomers(res.data?.data?.active ?? null))
       .catch(() => {});
   }, [fetchOrders, fetchCustomers, fetchServices]);
 
   const safeOrders = Array.isArray(orders) ? orders : [];
   const safeCustomers = Array.isArray(customers) ? customers : [];
 
-  // ---- Metric computations ----
+  // ---- Metric computations — use server aggregates when available ----
 
-  const totalRevenue = useMemo(
-    () =>
-      safeOrders
-        .filter((o: any) => o.payment?.status === 'paid' || o.paymentStatus === 'paid')
-        .reduce((sum: number, o: any) => sum + (o.pricing?.total || o.total || 0), 0),
-    [safeOrders]
-  );
-
-  // Use DB-accurate count if available, fallback to computed
-  const activeOrders = activeOrdersCount ??
-    safeOrders.filter(
-      (o: any) => !['completed', 'cancelled', 'delivered'].includes(o.status)
-    ).length;
-
-  const activeCustomers = useMemo(
-    () => safeCustomers.filter((c: any) => c.isActive !== false).length,
-    [safeCustomers]
-  );
-
-  const pendingPayments = useMemo(
-    () =>
-      safeOrders.filter((o: any) => {
-        const ps = o.payment?.status || o.paymentStatus || 'unpaid';
-        return ps === 'pending' || ps === 'unpaid';
-      }).length,
-    [safeOrders]
-  );
+  const totalRevenue    = dashStats?.totalRevenue    ?? 0;
+  const activeOrders    = dashStats?.activeOrders    ?? safeOrders.filter((o: any) => !['completed','cancelled','delivered'].includes(o.status)).length;
+  const pendingPayments = dashStats?.pendingPayments ?? 0;
+  const activeCustomers = totalCustomers             ?? safeCustomers.filter((c: any) => c.isActive !== false).length;
 
   // ---- Recent orders: 5 most recent ----
 
@@ -281,14 +270,10 @@ export default function AdminDashboard() {
       .sort((a, b) => b.value - a.value);
   }, [safeOrders]);
 
-  // ---- Today's stats ----
-  const todayOrders = useMemo(
-    () => safeOrders.filter((o: any) => isSameDay(new Date(o.createdAt), new Date())),
-    [safeOrders]
-  );
-  const todayRevenue = todayOrders
-    .filter((o: any) => o.payment?.status === 'paid' || o.paymentStatus === 'paid')
-    .reduce((sum: number, o: any) => sum + (o.pricing?.total || o.total || 0), 0);
+  // ---- Today's stats — from server aggregates ----
+  const todayOrdersCount = dashStats?.todayOrders ?? safeOrders.filter((o: any) => isSameDay(new Date(o.createdAt), new Date())).length;
+  const todayRevenue     = dashStats?.todayRevenue ?? 0;
+  const totalOrdersCount = dashStats?.totalOrders  ?? safeOrders.length;
 
   // Loading skeleton
   if (ordersLoading && safeOrders.length === 0) {
@@ -381,7 +366,7 @@ export default function AdminDashboard() {
         <Card className="border-l-4 border-l-primary">
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Today's Orders</p>
-            <p className="text-3xl font-bold mt-1">{todayOrders.length}</p>
+            <p className="text-3xl font-bold mt-1">{todayOrdersCount}</p>
           </CardContent>
         </Card>
         {isAdmin && (
@@ -395,7 +380,7 @@ export default function AdminDashboard() {
         <Card className="border-l-4 border-l-amber-500">
           <CardContent className="pt-4 pb-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Orders (All Time)</p>
-            <p className="text-3xl font-bold mt-1">{safeOrders.length}</p>
+            <p className="text-3xl font-bold mt-1">{totalOrdersCount}</p>
           </CardContent>
         </Card>
       </div>

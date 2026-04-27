@@ -317,6 +317,7 @@ export default function StaffPerformancePage() {
           </CardContent>
         </Card>
 
+        {/* Revenue Processed card hidden
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Revenue Processed</CardTitle>
@@ -327,6 +328,7 @@ export default function StaffPerformancePage() {
             <p className="text-xs text-muted-foreground">Total value of completed orders</p>
           </CardContent>
         </Card>
+        */}
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

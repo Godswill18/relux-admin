@@ -2,7 +2,8 @@
 // CUSTOMERS PAGE - Customer Management Interface
 // ============================================================================
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import apiClient from '@/lib/api/client';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, Trash, Wallet, Award,
@@ -60,8 +61,18 @@ export default function CustomersPage() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('name_asc');
 
+  interface CustomerStats { total: number; active: number; newThisMonth: number; inactive: number; }
+  const [serverStats, setServerStats] = useState<CustomerStats | null>(null);
+  const hasFetchedStats = useRef(false);
+
   useEffect(() => {
     fetchCustomers();
+    if (!hasFetchedStats.current) {
+      hasFetchedStats.current = true;
+      apiClient.get('/users/customer-stats')
+        .then((res) => setServerStats(res.data?.data ?? null))
+        .catch(() => {});
+    }
   }, [fetchCustomers]);
 
   const handleConfirmDelete = async () => {
@@ -114,16 +125,13 @@ export default function CustomersPage() {
     }
   }, [filteredCustomers, sortBy]);
 
-  // Stats
+  // Stats — use server aggregates (accurate) with client fallback while loading
   const now = new Date();
   const stats = {
-    total: customerList.length,
-    active: customerList.filter((c) => c.isActive !== false).length,
-    newThisMonth: customerList.filter((c) => {
-      const d = new Date(c.createdAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    }).length,
-    inactive: customerList.filter((c) => c.isActive === false).length,
+    total:        serverStats?.total        ?? customerList.length,
+    active:       serverStats?.active       ?? customerList.filter((c) => c.isActive !== false).length,
+    newThisMonth: serverStats?.newThisMonth ?? customerList.filter((c) => { const d = new Date(c.createdAt); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length,
+    inactive:     serverStats?.inactive     ?? customerList.filter((c) => c.isActive === false).length,
   };
 
   // Desktop table columns
