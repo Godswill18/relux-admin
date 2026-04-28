@@ -7,6 +7,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { ProtectedRoute, UnauthorizedPage } from '@/components/shared/ProtectedRoute';
+import { ScrollToTop } from '@/components/shared/ScrollToTop';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { StaffLayout } from '@/components/layouts/StaffLayout';
 import { PlaceholderPage } from '@/components/shared/PlaceholderPage';
@@ -96,6 +97,7 @@ const App = () => (
     <TooltipProvider>
       <Sonner />
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           {/* ===================================================================
               ROOT REDIRECT
