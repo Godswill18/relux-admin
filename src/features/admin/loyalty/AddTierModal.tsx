@@ -32,6 +32,7 @@ const addTierSchema = z.object({
   minSpend: z.coerce.number().min(0, 'Min spend must be 0 or more').default(0),
   multiplierPercent: z.coerce.number().min(100, 'Multiplier must be at least 100%').default(100),
   rank: z.coerce.number().min(1, 'Rank must be at least 1'),
+  discountPercent: z.coerce.number().min(0).max(100).default(0),
   freePickup: z.boolean().default(false),
   freeDelivery: z.boolean().default(false),
   priorityTurnaround: z.boolean().default(false),
@@ -59,6 +60,7 @@ export function AddTierModal({ open, onOpenChange }: AddTierModalProps) {
       minSpend: 0,
       multiplierPercent: 100,
       rank: 1,
+      discountPercent: 0,
       freePickup: false,
       freeDelivery: false,
       priorityTurnaround: false,
@@ -163,6 +165,21 @@ export function AddTierModal({ open, onOpenChange }: AddTierModalProps) {
 
           <div className="space-y-3 rounded-lg border p-4">
             <div className="text-sm font-medium">Tier Benefits</div>
+
+            <FormField
+              control={form.control}
+              name="discountPercent"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Auto Discount (%)</FormLabel>
+                  <FormControl>
+                    <Input type="number" min={0} max={100} placeholder="0" {...field} />
+                  </FormControl>
+                  <FormDescription>Automatically applied to every order at checkout (0 = no discount)</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}

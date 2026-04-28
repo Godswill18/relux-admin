@@ -476,16 +476,24 @@ export interface PaymentSettings {
 
 export interface LoyaltyTier {
   id: string;
+  _id?: string;
   name: string;
   pointsRequired: number;
-  multiplier: number; // Percentage (e.g., 150 for +50% points)
-  rank: number; // For ordering tiers
-  benefits: {
+  minSpend?: number;
+  multiplier: number;
+  multiplierPercent?: number;
+  rank: number;
+  discountPercent: number;
+  freePickup: boolean;
+  freeDelivery: boolean;
+  priorityTurnaround: boolean;
+  benefits?: {
     freePickup: boolean;
     freeDelivery: boolean;
     priorityTurnaround: boolean;
   };
-  isActive: boolean;
+  active?: boolean;
+  isActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }

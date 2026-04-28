@@ -94,6 +94,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const { staff, fetchStaff } = useStaffStore();
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedAddonIds, setSelectedAddonIds] = useState<string[]>([]);
+  const [selectedCustomerTier, setSelectedCustomerTier] = useState<any>(null);
 
   useEffect(() => {
     if (open) {
@@ -105,6 +106,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       fetchStaff();
     } else {
       setSelectedAddonIds([]);
+      setSelectedCustomerTier(null);
     }
   }, [open, fetchCustomers, fetchServices, fetchCategories, fetchServiceLevels, fetchAddons, fetchStaff]);
 
@@ -148,9 +150,15 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
 
   // Pricing
   const subtotal        = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
-  const pickupFee       = watchOrderType === 'pickup-delivery' ? 500 : 0;
-  const deliveryFee     = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const basePickupFee   = watchOrderType === 'pickup-delivery' ? 500 : 0;
+  const baseDeliveryFee = watchOrderType === 'pickup-delivery' ? 500 : 0;
   const serviceLevelFee = Math.round(subtotal * levelPct / 100);
+
+  // Loyalty tier — apply benefits client-side for preview
+  const tierDiscountPct    = selectedCustomerTier?.discountPercent ?? 0;
+  const tierDiscountAmount = tierDiscountPct > 0 ? Math.round(subtotal * tierDiscountPct / 100) : 0;
+  const pickupFee          = selectedCustomerTier?.freePickup    ? 0 : basePickupFee;
+  const deliveryFee        = selectedCustomerTier?.freeDelivery  ? 0 : baseDeliveryFee;
 
   // Add-ons fee: calculated client-side for preview; backend recalculates from DB on submit
   const selectedAddons  = activeAddons.filter((a) => selectedAddonIds.includes(a.id || a._id));
@@ -159,7 +167,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     return sum + amount;
   }, 0);
 
-  const total = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee + addonsFee - watchDiscount);
+  const total = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee + addonsFee - watchDiscount - tierDiscountAmount);
 
   // ── Auto-fill customer fields from existing customer dropdown ───────────
   const filteredCustomers = (Array.isArray(customers) ? customers : [])
@@ -178,6 +186,9 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     if (customer) {
       form.setValue('walkInCustomer.name',  customer.name  || '', { shouldValidate: true });
       form.setValue('walkInCustomer.phone', customer.phone || '', { shouldValidate: true });
+      // Capture tier for live pricing preview (backend applies authoritative calculation)
+      const tier = customer.customerId?.loyaltyTierId ?? customer.loyaltyTierId ?? null;
+      setSelectedCustomerTier(tier && tier.active !== false ? tier : null);
     }
   };
 
@@ -877,8 +888,20 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                   </div>
                 );
               })}
+              {selectedCustomerTier && (
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 text-xs font-medium">
+                  <span>
+                    {selectedCustomerTier.name} Tier Benefit
+                    {tierDiscountPct > 0 ? ` (−${tierDiscountPct}%)` : ''}
+                    {selectedCustomerTier.freePickup && basePickupFee > 0 ? ' · Free Pickup' : ''}
+                    {selectedCustomerTier.freeDelivery && baseDeliveryFee > 0 ? ' · Free Delivery' : ''}
+                    {selectedCustomerTier.priorityTurnaround ? ' · Priority' : ''}
+                  </span>
+                  <span>{tierDiscountAmount > 0 ? `−₦${tierDiscountAmount.toLocaleString()}` : 'Applied'}</span>
+                </div>
+              )}
               <div className="flex justify-between items-center">
-                <span>Discount</span>
+                <span>Manual Discount</span>
                 <FormField
                   control={form.control}
                   name="discount"

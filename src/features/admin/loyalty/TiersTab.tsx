@@ -32,9 +32,11 @@ import { useLoyaltyStore } from '@/stores/useLoyaltyStore';
 function getBenefitLabels(tier: any): string[] {
   const labels: string[] = [];
   const b = tier.benefits || tier;
+  const disc = tier.discountPercent ?? 0;
+  if (disc > 0) labels.push(`${disc}% Auto Discount`);
   if (b.freePickup || tier.freePickup) labels.push('Free Pickup');
   if (b.freeDelivery || tier.freeDelivery) labels.push('Free Delivery');
-  if (b.priorityTurnaround || tier.priorityTurnaround) labels.push('Priority Turnaround');
+  if (b.priorityTurnaround || tier.priorityTurnaround) labels.push('Priority Processing');
   return labels;
 }
 
