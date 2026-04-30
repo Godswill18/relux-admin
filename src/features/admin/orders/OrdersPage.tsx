@@ -11,9 +11,10 @@ import {
   Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine,
   CheckCircle2, Search, Package, User, Loader2,
   Clock, Check, Truck, Settings2, Waves, Zap,
-  PackageCheck, Navigation, Home, XCircle,
+  PackageCheck, Navigation, Home, XCircle, FileDown,
 } from 'lucide-react';
 import { CreateOrderModal } from './CreateOrderModal';
+import { ExportOrdersModal } from './ExportOrdersModal';
 import { EditOrderModal } from './EditOrderModal';
 import { AssignStaffModal } from './AssignStaffModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
@@ -100,6 +101,7 @@ export default function OrdersPage() {
   const canEdit   = useHasPermission(Permission.EDIT_ORDER);
   const canAssign = useHasPermission(Permission.ASSIGN_STAFF);
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
+  const canExport = useHasPermission(Permission.EXPORT_REPORTS);
 
   const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
   const [orders,       setOrders]       = useState<any[]>([]);
@@ -117,6 +119,7 @@ export default function OrdersPage() {
   const [editTarget,   setEditTarget]   = useState<any>(null);
   const [assignTarget, setAssignTarget] = useState<any>(null);
   const [scannerOpen,  setScannerOpen]  = useState(false);
+  const [exportOpen,   setExportOpen]   = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [isDeleting,   setIsDeleting]   = useState(false);
 
@@ -445,6 +448,11 @@ export default function OrdersPage() {
           <p className="text-muted-foreground text-sm">11-stage laundry workflow</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {canExport && (
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setExportOpen(true)}>
+              <FileDown className="mr-2 h-4 w-4" /> Export
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => setScannerOpen(true)}>
             <ScanLine className="mr-2 h-4 w-4" /> Scan
           </Button>
@@ -471,6 +479,7 @@ export default function OrdersPage() {
         order={assignTarget}
       />
       <BarcodeScannerModal open={scannerOpen} onOpenChange={setScannerOpen} />
+      <ExportOrdersModal open={exportOpen} onOpenChange={setExportOpen} />
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(o) => !o && setDeleteTarget(null)}
