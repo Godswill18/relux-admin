@@ -18,6 +18,13 @@ import {
   LogOut,
   Loader2,
   Navigation,
+  BarChart2,
+  FileSpreadsheet,
+  FileText,
+  TrendingUp,
+  CalendarDays,
+  Timer,
+  Info,
 } from 'lucide-react';
 import { format, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
@@ -48,6 +55,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 import { useAttendanceStore, AttendanceRecord } from '@/stores/useAttendanceStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useHasPermission } from '@/stores/useAuthStore';
+import { Permission } from '@/types';
 import apiClient from '@/lib/api/client';
 import { useGeolocation, GeoPosition } from '@/hooks/useGeolocation';
 
@@ -545,6 +554,52 @@ function ManagerClockPanel({ onClockAction }: { onClockAction: () => void }) {
 }
 
 // ============================================================================
+// WORK HOURS TAB HELPERS
+// ============================================================================
+
+interface WorkHourRow {
+  userId:              string;
+  name:                string;
+  role:                string;
+  sessionCount:        number;
+  incompleteSessions:  number;
+  daysWorked:          number;
+  totalMinutes:        number;
+  totalHours:          number;
+  avgDailyHours:       number;
+  overtimeHours:       number;
+}
+
+function fmtHours(h: number): string {
+  const hrs  = Math.floor(h);
+  const mins = Math.round((h - hrs) * 60);
+  return mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+}
+
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+
+async function triggerFileDownload(
+  url: string,
+  params: Record<string, string>,
+  filename: string,
+  mime: string,
+) {
+  const res = await apiClient.get(url, { params, responseType: 'blob' });
+  const blob = new Blob([res.data], { type: mime });
+  const href = window.URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = href;
+  a.setAttribute('download', filename);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(href);
+}
+
+// ============================================================================
 // MAIN PAGE
 // ============================================================================
 
@@ -553,7 +608,9 @@ export default function AdminAttendancePage() {
   const isManager = user?.role === 'manager';
   const { records, total, isLoading, fetchAttendance, updateAttendance } = useAttendanceStore();
 
-  const [activeTab, setActiveTab]     = useState<'today' | 'history'>('today');
+  const canExport = useHasPermission(Permission.EXPORT_REPORTS);
+
+  const [activeTab, setActiveTab]     = useState<'today' | 'history' | 'work-hours'>('today');
   const [editRecord, setEditRecord]   = useState<AttendanceRecord | null>(null);
   const [editOpen, setEditOpen]       = useState(false);
 
@@ -561,6 +618,17 @@ export default function AdminAttendancePage() {
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate]     = useState('');
   const [filterStatus, setFilterStatus]       = useState('all');
+
+  // Work Hours state
+  const now = new Date();
+  const [whMonth,        setWhMonth]        = useState(String(now.getMonth() + 1));
+  const [whYear,         setWhYear]         = useState(String(now.getFullYear()));
+  const [whData,         setWhData]         = useState<WorkHourRow[]>([]);
+  const [whIsLoading,    setWhIsLoading]    = useState(false);
+  const [whDrillStaff,   setWhDrillStaff]  = useState<WorkHourRow | null>(null);
+  const [whDrillRecords, setWhDrillRecords] = useState<AttendanceRecord[]>([]);
+  const [whDrillLoading, setWhDrillLoading] = useState(false);
+  const [exporting,      setExporting]      = useState<'excel'|'pdf'|null>(null);
 
   // ── Load today's data on mount ──────────────────────────────────────────
   const loadToday = useCallback(() => {
@@ -586,12 +654,92 @@ export default function AdminAttendancePage() {
     else                        loadHistory();
   }, [activeTab, loadToday, loadHistory]);
 
+  // ── Work Hours: fetch & handlers ─────────────────────────────────────────
+  const loadWorkHours = useCallback(async () => {
+    setWhIsLoading(true);
+    try {
+      const res = await apiClient.get('/attendance/monthly-hours', {
+        params: { month: whMonth, year: whYear },
+      });
+      setWhData(res.data.data?.summary ?? []);
+    } catch {
+      toast.error('Failed to load work hours data');
+    } finally {
+      setWhIsLoading(false);
+    }
+  }, [whMonth, whYear]);
+
+  useEffect(() => {
+    if (activeTab === 'work-hours') loadWorkHours();
+  }, [activeTab, loadWorkHours]);
+
+  const openDrillDown = async (row: WorkHourRow) => {
+    setWhDrillStaff(row);
+    setWhDrillRecords([]);
+    setWhDrillLoading(true);
+    try {
+      const monthNum  = parseInt(whMonth, 10);
+      const yearNum   = parseInt(whYear, 10);
+      const startDate = new Date(yearNum, monthNum - 1, 1).toISOString();
+      const endDate   = new Date(yearNum, monthNum, 0, 23, 59, 59, 999).toISOString();
+      const res = await apiClient.get(`/attendance/user/${row.userId}`, {
+        params: { startDate, endDate, limit: 200 },
+      });
+      setWhDrillRecords(res.data.data?.attendance ?? res.data.data ?? []);
+    } catch {
+      toast.error('Failed to load sessions');
+    } finally {
+      setWhDrillLoading(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    if (exporting) return;
+    setExporting('excel');
+    try {
+      await triggerFileDownload(
+        '/attendance/export/work-hours/excel',
+        { month: whMonth, year: whYear },
+        `work-hours-${MONTH_NAMES[parseInt(whMonth) - 1]}-${whYear}.xlsx`,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      toast.success('Excel report downloaded');
+    } catch {
+      toast.error('Failed to export Excel report');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (exporting) return;
+    setExporting('pdf');
+    try {
+      await triggerFileDownload(
+        '/attendance/export/work-hours/pdf',
+        { month: whMonth, year: whYear },
+        `work-hours-${MONTH_NAMES[parseInt(whMonth) - 1]}-${whYear}.pdf`,
+        'application/pdf',
+      );
+      toast.success('PDF report downloaded');
+    } catch {
+      toast.error('Failed to export PDF report');
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // ── Derived stats ─────────────────────────────────────────────────────────
   const todayRecords  = records.filter((r) => isTodayUTC(r.clockInAt));
   const presentToday  = todayRecords.filter((r) => r.status === 'present').length;
   const lateToday     = todayRecords.filter((r) => r.status === 'late').length;
   const stillIn       = todayRecords.filter((r) => !r.clockOutAt).length;
   const autoOuts      = todayRecords.filter((r) => r.autoClockOut).length;
+
+  // Work hours aggregates (recalculated cheaply from whData)
+  const whTotalHours    = whData.reduce((s, r) => s + r.totalHours, 0);
+  const whTotalDays     = whData.reduce((s, r) => s + r.daysWorked, 0);
+  const whTotalOvertime = whData.reduce((s, r) => s + r.overtimeHours, 0);
 
   // ── Edit handler ──────────────────────────────────────────────────────────
   const handleEdit = (record: AttendanceRecord) => {
@@ -600,6 +748,83 @@ export default function AdminAttendancePage() {
   };
 
   const columns = buildColumns(handleEdit);
+
+  // Work hours DataTable columns
+  const whColumns: ColumnDef<WorkHourRow>[] = [
+    {
+      id: 'staff',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Staff" />,
+      accessorFn: (row) => row.name,
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium">{row.original.name}</div>
+          <div className="text-xs text-muted-foreground capitalize">{row.original.role}</div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'sessionCount',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Sessions" />,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5 tabular-nums">
+          {row.original.sessionCount}
+          {row.original.incompleteSessions > 0 && (
+            <Badge variant="destructive" className="text-[10px] px-1 py-0">
+              {row.original.incompleteSessions} open
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'daysWorked',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Days" />,
+      cell: ({ row }) => (
+        <span className="tabular-nums font-medium">{row.original.daysWorked}</span>
+      ),
+    },
+    {
+      accessorKey: 'totalHours',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Total Hours" />,
+      cell: ({ row }) => (
+        <span className="tabular-nums font-semibold">{fmtHours(row.original.totalHours)}</span>
+      ),
+    },
+    {
+      accessorKey: 'avgDailyHours',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Avg Daily" />,
+      cell: ({ row }) => (
+        <span className="tabular-nums text-muted-foreground">{fmtHours(row.original.avgDailyHours)}</span>
+      ),
+    },
+    {
+      accessorKey: 'overtimeHours',
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Overtime" />,
+      cell: ({ row }) => {
+        const ot = row.original.overtimeHours;
+        return ot > 0 ? (
+          <span className="tabular-nums font-medium text-amber-600 dark:text-amber-400">
+            +{fmtHours(ot)}
+          </span>
+        ) : (
+          <span className="text-muted-foreground text-xs">—</span>
+        );
+      },
+    },
+    {
+      id: 'actions',
+      cell: ({ row }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => openDrillDown(row.original)}
+          title="View sessions"
+        >
+          <Info className="h-4 w-4" />
+        </Button>
+      ),
+    },
+  ];
 
   // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isLoading && records.length === 0) {
@@ -687,11 +912,15 @@ export default function AdminAttendancePage() {
       {/* ── Tabs ─────────────────────────────────────────────────────────── */}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'today' | 'history')}
+        onValueChange={(v) => setActiveTab(v as 'today' | 'history' | 'work-hours')}
       >
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="today" className="flex-1 sm:flex-none">Today</TabsTrigger>
           <TabsTrigger value="history" className="flex-1 sm:flex-none">History</TabsTrigger>
+          <TabsTrigger value="work-hours" className="flex-1 sm:flex-none gap-1.5">
+            <BarChart2 className="h-3.5 w-3.5" />
+            Work Hours
+          </TabsTrigger>
         </TabsList>
 
         {/* ── TODAY TAB ───────────────────────────────────────────────────── */}
@@ -812,7 +1041,240 @@ export default function AdminAttendancePage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* ── WORK HOURS TAB ──────────────────────────────────────────────── */}
+        <TabsContent value="work-hours">
+          <div className="space-y-4">
+
+            {/* Filter + Export row */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-wrap gap-3 items-end">
+                    <div className="flex flex-col gap-1">
+                      <Label className="text-xs text-muted-foreground">Month</Label>
+                      <Select value={whMonth} onValueChange={setWhMonth}>
+                        <SelectTrigger className="w-36">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MONTH_NAMES.map((name, i) => (
+                            <SelectItem key={i + 1} value={String(i + 1)}>{name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Label className="text-xs text-muted-foreground">Year</Label>
+                      <Select value={whYear} onValueChange={setWhYear}>
+                        <SelectTrigger className="w-28">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[now.getFullYear() - 1, now.getFullYear()].map((y) => (
+                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button onClick={loadWorkHours} disabled={whIsLoading} variant="outline" className="gap-2">
+                      {whIsLoading
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : <RefreshCw className="h-4 w-4" />
+                      }
+                      Load
+                    </Button>
+                  </div>
+
+                  {canExport && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportExcel}
+                        disabled={!!exporting || whData.length === 0}
+                        className="gap-1.5 border-green-300 hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-950/20"
+                      >
+                        {exporting === 'excel'
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <FileSpreadsheet className="h-3.5 w-3.5 text-green-600" />
+                        }
+                        <span className="text-xs">Excel</span>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleExportPdf}
+                        disabled={!!exporting || whData.length === 0}
+                        className="gap-1.5 border-red-300 hover:border-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
+                      >
+                        {exporting === 'pdf'
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <FileText className="h-3.5 w-3.5 text-red-600" />
+                        }
+                        <span className="text-xs">PDF</span>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Aggregate stat cards (only when data loaded) */}
+            {!whIsLoading && whData.length > 0 && (
+              <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Active Staff</CardTitle>
+                    <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{whData.length}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {MONTH_NAMES[parseInt(whMonth) - 1]} {whYear}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Hours</CardTitle>
+                    <Timer className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{fmtHours(whTotalHours)}</div>
+                    <p className="text-xs text-muted-foreground">All staff combined</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Days</CardTitle>
+                    <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{whTotalDays}</div>
+                    <p className="text-xs text-muted-foreground">Staff-days worked</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Overtime</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{fmtHours(whTotalOvertime)}</div>
+                    <p className="text-xs text-muted-foreground">Hours over 8h/day</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Main table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
+                  <BarChart2 className="h-5 w-5 text-primary" />
+                  Work Hours — {MONTH_NAMES[parseInt(whMonth) - 1]} {whYear}
+                </CardTitle>
+                <CardDescription>
+                  Click the <Info className="inline h-3.5 w-3.5 mx-0.5 align-middle" /> icon on any row to view raw sessions
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="px-3 sm:px-6">
+                <DataTable
+                  columns={whColumns}
+                  data={whData}
+                  searchKey="staff"
+                  searchPlaceholder="Search by staff name…"
+                  isLoading={whIsLoading}
+                />
+              </CardContent>
+            </Card>
+
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* ── Work Hours Drill-Down Dialog ────────────────────────────────── */}
+      <Dialog open={!!whDrillStaff} onOpenChange={(o) => { if (!o) setWhDrillStaff(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {whDrillStaff?.name} — {MONTH_NAMES[parseInt(whMonth) - 1]} {whYear}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="flex items-center flex-wrap gap-2 text-sm">
+                {whDrillStaff && (
+                  <>
+                    <span className="capitalize text-muted-foreground">{whDrillStaff.role}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{whDrillStaff.sessionCount} session{whDrillStaff.sessionCount !== 1 ? 's' : ''}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{fmtHours(whDrillStaff.totalHours)} total</span>
+                    {whDrillStaff.incompleteSessions > 0 && (
+                      <Badge variant="destructive" className="text-xs">
+                        {whDrillStaff.incompleteSessions} open
+                      </Badge>
+                    )}
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          {whDrillLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : whDrillRecords.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-8">No sessions found</p>
+          ) : (
+            <div className="overflow-auto max-h-[50vh]">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-background border-b">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Clock In</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Clock Out</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Hours</th>
+                    <th className="text-left py-2 px-3 font-medium text-muted-foreground">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {whDrillRecords.map((r) => (
+                    <tr key={r._id} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="py-2 px-3 tabular-nums">
+                        {format(new Date(r.clockInAt), 'MMM dd, yyyy')}
+                      </td>
+                      <td className="py-2 px-3 tabular-nums">
+                        {format(new Date(r.clockInAt), 'HH:mm')}
+                      </td>
+                      <td className="py-2 px-3 tabular-nums">
+                        {r.clockOutAt
+                          ? format(new Date(r.clockOutAt), 'HH:mm')
+                          : <Badge variant="secondary" className="text-[10px]">Open</Badge>
+                        }
+                      </td>
+                      <td className="py-2 px-3 tabular-nums font-medium">
+                        {hoursWorked(r)}
+                      </td>
+                      <td className="py-2 px-3">
+                        <StatusBadge status={r.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWhDrillStaff(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Edit Dialog ──────────────────────────────────────────────────── */}
       <EditAttendanceDialog
