@@ -523,7 +523,7 @@ export default function OrderDetailPage() {
               </div>
 
               {/* ── Wallet Deduction Panel (partial or wallet/pay-later unpaid) ── */}
-              {(order.paymentStatus === 'partial' || (order.paymentStatus === 'unpaid' && ['pay-later', 'wallet'].includes(payment.method))) && (() => {
+              {(order.paymentStatus === 'partial' || order.paymentStatus === 'unpaid') && (() => {
                 const isFullyUnpaid = order.paymentStatus === 'unpaid';
                 const alreadyPaid   = isFullyUnpaid ? 0 : (payment.amount || 0);
                 const orderTotal  = pricing.total || order.total || 0;
