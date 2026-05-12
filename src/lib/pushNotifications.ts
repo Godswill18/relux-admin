@@ -38,15 +38,17 @@ export async function initPushNotifications(token: string): Promise<void> {
 export async function removePushSubscription(token: string): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.getSubscription();
-    if (!sub) return;
-    await fetch(`${BACKEND_API}/notifications/push-subscribe`, {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ endpoint: sub.endpoint }),
-    });
-    await sub.unsubscribe();
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const reg of regs) {
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub) continue;
+      await fetch(`${BACKEND_API}/notifications/push-subscribe`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      });
+      await sub.unsubscribe();
+    }
   } catch {
     // Silently fail
   }

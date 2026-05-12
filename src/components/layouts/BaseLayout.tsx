@@ -80,11 +80,12 @@ export function BaseLayout({
     });
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     const token = useAuthStore.getState().token;
     if (token) {
-      const { removePushSubscription } = await import('@/lib/pushNotifications');
-      await removePushSubscription(token);
+      import('@/lib/pushNotifications').then(({ removePushSubscription }) => {
+        removePushSubscription(token).catch(() => {});
+      }).catch(() => {});
     }
     logout();
     window.location.href = '/login';
