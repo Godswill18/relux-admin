@@ -23,6 +23,7 @@ import CustomersPage from '@/features/admin/customers/CustomersPage';
 import ServicesPage from '@/features/admin/services/ServicesPage';
 import PaymentsPage from '@/features/admin/payments/PaymentsPage';
 import LoyaltyPage from '@/features/admin/loyalty/LoyaltyPage';
+import LeaderboardPage from '@/features/admin/leaderboard/LeaderboardPage';
 import ReferralsPage from '@/features/admin/referrals/ReferralsPage';
 import SubscriptionsPage from '@/features/admin/subscriptions/SubscriptionsPage';
 import PromoCodesPage from '@/features/admin/promo-codes/PromoCodesPage';
@@ -195,6 +196,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route path="leaderboard" element={<LeaderboardPage />} />
             <Route
               path="referrals"
               element={

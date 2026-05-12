@@ -10,6 +10,7 @@ import {
   Package,
   CreditCard,
   Award,
+  Trophy,
   UserPlus,
   Repeat,
   Tag,
@@ -73,6 +74,11 @@ const ALL_ADMIN_NAV: AdminNavItem[] = [
     path: '/admin/loyalty',
     icon: <Award className="h-4 w-4" />,
     permission: Permission.MANAGE_LOYALTY_PROGRAM,
+  },
+  {
+    label: 'Leaderboard',
+    path: '/admin/leaderboard',
+    icon: <Trophy className="h-4 w-4" />,
   },
   {
     label: 'Referrals',

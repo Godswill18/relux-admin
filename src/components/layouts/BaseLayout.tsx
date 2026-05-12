@@ -2,7 +2,7 @@
 // BASE LAYOUT - Shared Layout Component for Admin and Staff
 // ============================================================================
 
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Moon, Sun, Menu, X, LogOut, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -72,7 +72,20 @@ export function BaseLayout({
   const user = useCurrentUser();
   const location = useLocation();
 
-  const handleLogout = () => {
+  useEffect(() => {
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    import('@/lib/pushNotifications').then(({ initPushNotifications }) => {
+      initPushNotifications(token);
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    const token = useAuthStore.getState().token;
+    if (token) {
+      const { removePushSubscription } = await import('@/lib/pushNotifications');
+      await removePushSubscription(token);
+    }
     logout();
     window.location.href = '/login';
   };
