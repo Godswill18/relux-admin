@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { PushNotificationPrompt } from '@/components/layouts/PushNotificationPrompt';
+import { PWAInstallPrompt } from '@/components/layouts/PWAInstallPrompt';
 
 // ============================================================================
 // TYPES
@@ -75,8 +77,8 @@ export function BaseLayout({
   useEffect(() => {
     const token = useAuthStore.getState().token;
     if (!token) return;
-    import('@/lib/pushNotifications').then(({ initPushNotifications }) => {
-      initPushNotifications(token);
+    import('@/lib/pushNotifications').then(({ resumePushIfGranted }) => {
+      resumePushIfGranted(token);
     });
   }, []);
 
@@ -93,7 +95,7 @@ export function BaseLayout({
 
   // Profile page path — staff stay in StaffLayout; all other roles use the
   // admin layout so their sidebar stays consistent.
-  const profilePath = user?.role === 'staff' ? '/staff/profile' : '/admin/profile';
+  const profilePath = (user?.role as string) === 'staff' ? '/staff/profile' : '/admin/profile';
 
   // Get user initials for avatar
   const userInitials =
@@ -283,7 +285,11 @@ export function BaseLayout({
         </header>
 
         {/* Page Content — ONLY this area scrolls */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <PWAInstallPrompt />
+          <PushNotificationPrompt />
+          {children}
+        </main>
       </div>
     </div>
   );
