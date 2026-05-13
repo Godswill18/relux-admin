@@ -87,7 +87,27 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url || '/';
+  const { type, metadata } = event.notification.data || {};
+  const orderId = metadata?.orderId;
+
+  let url = '/admin';
+  switch (type) {
+    case 'order_created':
+    case 'order_cancelled':
+    case 'order_status_updated':
+      url = orderId ? `/admin/orders/${orderId}` : '/admin/orders';
+      break;
+    case 'order_needs_pickup':
+    case 'order_ready_for_delivery':
+      url = '/delivery/orders';
+      break;
+    case 'shift_ending_soon':
+      url = '/staff';
+      break;
+    case 'chat_message':
+      url = '/admin/chat';
+      break;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
