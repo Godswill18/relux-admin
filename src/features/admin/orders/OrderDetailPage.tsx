@@ -25,9 +25,11 @@ import {
   Pencil,
   Wallet,
   History,
+  Trash2,
 } from 'lucide-react';
 import { OrderReceiptModal } from './OrderReceiptModal';
 import { EditOrderModal } from './EditOrderModal';
+import { CancelOrderModal } from './CancelOrderModal';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -102,6 +104,7 @@ export default function OrderDetailPage() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [isChargingWallet, setIsChargingWallet] = useState(false);
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
 
   // Fetch single order
   useEffect(() => {
@@ -327,6 +330,17 @@ export default function OrderDetailPage() {
             <Printer className="mr-2 h-4 w-4" />
             <span className="hidden xs:inline">Print </span>Receipt
           </Button>
+          {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
+              onClick={() => setIsCancelOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Cancel Order
+            </Button>
+          )}
           {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
             <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" />
@@ -990,19 +1004,44 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
-          {/* Notes */}
+          {/* Notes / Cancellation Reason */}
           {order.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Notes</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm">{order.notes}</p>
-              </CardContent>
-            </Card>
+            order.status === 'cancelled' ? (
+              <Card className="border-destructive/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    Cancellation Reason
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm">
+                    {order.notes.startsWith('Cancelled: ')
+                      ? order.notes.slice('Cancelled: '.length)
+                      : order.notes}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-medium">Notes</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm">{order.notes}</p>
+                </CardContent>
+              </Card>
+            )
           )}
         </div>
       </div>
+
+      <CancelOrderModal
+        open={isCancelOpen}
+        onOpenChange={setIsCancelOpen}
+        order={order}
+        onSuccess={() => setOrder((prev: any) => ({ ...prev, status: 'cancelled' }))}
+      />
     </div>
   );
 }

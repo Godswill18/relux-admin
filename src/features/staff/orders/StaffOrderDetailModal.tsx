@@ -28,6 +28,7 @@ import {
   Wifi,
   Store,
   Receipt,
+  AlertTriangle,
 } from 'lucide-react';
 import { PriorityBadge } from '@/components/shared/StatusBadges';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
@@ -366,6 +367,23 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
                   icon={User}
                   label="Staff Member"
                   value={order.assignedStaff?.name ?? order.assignedStaff}
+                />
+              </>
+            )}
+
+            {/* ── Cancellation Reason ─────────────────────────────────────── */}
+            {order.status === 'cancelled' && order.notes && (
+              <>
+                <Separator className="my-1" />
+                <Section title="Cancellation" />
+                <Row
+                  icon={AlertTriangle}
+                  label="Reason"
+                  value={
+                    order.notes.startsWith('Cancelled: ')
+                      ? order.notes.slice('Cancelled: '.length)
+                      : order.notes
+                  }
                 />
               </>
             )}
