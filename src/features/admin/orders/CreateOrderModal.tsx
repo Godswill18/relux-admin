@@ -86,7 +86,7 @@ interface CreateOrderModalProps {
 
 export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderModalProps) {
   const { createOrder } = useOrderStore();
-  const { customers, fetchCustomers } = useCustomerStore();
+  const { customers, setFilters } = useCustomerStore();
   const {
     services, categories, serviceLevels, addons,
     fetchServices, fetchCategories, fetchServiceLevels, fetchAddons,
@@ -98,7 +98,8 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
 
   useEffect(() => {
     if (open) {
-      fetchCustomers();
+      // Reset customer search filter and trigger initial load
+      setFilters({ search: undefined });
       fetchServices();
       fetchCategories();
       fetchServiceLevels();
@@ -107,8 +108,17 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     } else {
       setSelectedAddonIds([]);
       setSelectedCustomerTier(null);
+      setFilters({ search: undefined });
     }
-  }, [open, fetchCustomers, fetchServices, fetchCategories, fetchServiceLevels, fetchAddons, fetchStaff]);
+  }, [open, setFilters, fetchServices, fetchCategories, fetchServiceLevels, fetchAddons, fetchStaff]);
+
+  // Debounce customer search → server-side query
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters({ search: customerSearch || undefined });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [customerSearch, setFilters]);
 
   // Active services, levels, and add-ons
   const activeServices = (Array.isArray(services) ? services : []).filter((s) => s.isActive !== false);
@@ -170,14 +180,8 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const total = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee + addonsFee - watchDiscount - tierDiscountAmount);
 
   // ── Auto-fill customer fields from existing customer dropdown ───────────
-  const filteredCustomers = (Array.isArray(customers) ? customers : [])
-    .filter((c) =>
-      customerSearch
-        ? c.name?.toLowerCase().includes(customerSearch.toLowerCase()) ||
-          c.phone?.includes(customerSearch)
-        : true
-    )
-    .slice(0, 50);
+  // customers from store is already server-filtered via debounced setFilters above
+  const filteredCustomers = Array.isArray(customers) ? customers : [];
 
   const handleSelectExistingCustomer = (customerId: string) => {
     const customer = (Array.isArray(customers) ? customers : []).find(

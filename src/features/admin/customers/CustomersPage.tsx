@@ -44,7 +44,7 @@ import { format } from 'date-fns';
 // ============================================================================
 
 export default function CustomersPage() {
-  const { customers, isLoading, isFetchingMore, hasMore, fetchCustomers, loadMoreCustomers, deleteCustomer } = useCustomerStore();
+  const { customers, isLoading, isFetchingMore, hasMore, fetchCustomers, loadMoreCustomers, deleteCustomer, setFilters } = useCustomerStore();
   const canCreate = useHasPermission(Permission.CREATE_CUSTOMER);
   const canEdit = useHasPermission(Permission.EDIT_CUSTOMER);
   const canDelete = useHasPermission(Permission.DELETE_CUSTOMER);
@@ -60,6 +60,19 @@ export default function CustomersPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('name_asc');
+
+  // Wire search input to store filter with debounce so backend is queried
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFilters({ search: search || undefined });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, setFilters]);
+
+  // Reset store search filter on unmount to avoid polluting shared state
+  useEffect(() => {
+    return () => { setFilters({ search: undefined }); };
+  }, [setFilters]);
 
   interface CustomerStats { total: number; active: number; newThisMonth: number; inactive: number; }
   const [serverStats, setServerStats] = useState<CustomerStats | null>(null);
