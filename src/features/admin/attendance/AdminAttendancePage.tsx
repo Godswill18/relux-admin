@@ -101,6 +101,18 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// Convert a UTC ISO string to the local datetime-local input value (YYYY-MM-DDTHH:MM)
+function toLocalInputValue(isoString: string | null | undefined): string {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const yyyy = d.getFullYear();
+  const MM   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  const HH   = String(d.getHours()).padStart(2, '0');
+  const mm   = String(d.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${MM}-${dd}T${HH}:${mm}`;
+}
+
 // ============================================================================
 // EDIT RECORD DIALOG
 // ============================================================================
@@ -120,8 +132,8 @@ function EditAttendanceDialog({ record, open, onOpenChange, onSave }: EditDialog
 
   useEffect(() => {
     if (record) {
-      setClockIn(record.clockInAt ? record.clockInAt.slice(0, 16) : '');
-      setClockOut(record.clockOutAt ? record.clockOutAt.slice(0, 16) : '');
+      setClockIn(toLocalInputValue(record.clockInAt));
+      setClockOut(toLocalInputValue(record.clockOutAt));
       setStatus(record.status);
     }
   }, [record]);
@@ -130,6 +142,15 @@ function EditAttendanceDialog({ record, open, onOpenChange, onSave }: EditDialog
     if (!record) return;
     setSaving(true);
     try {
+      if (clockIn && clockOut) {
+        const inDate  = clockIn.slice(0, 10);
+        const outDate = clockOut.slice(0, 10);
+        if (outDate > inDate) {
+          toast.error('Clock-out must be on the same day as clock-in.');
+          setSaving(false);
+          return;
+        }
+      }
       const payload: Partial<AttendanceRecord> = { status: status as AttendanceRecord['status'] };
       if (clockIn)  payload.clockInAt  = new Date(clockIn).toISOString();
       if (clockOut) payload.clockOutAt = new Date(clockOut).toISOString();
