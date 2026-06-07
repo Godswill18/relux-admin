@@ -42,6 +42,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useOrderStore } from '@/stores/useOrderStore';
 import { useStaffStore } from '@/stores/useStaffStore';
 import { toast } from 'sonner';
@@ -105,6 +115,7 @@ export default function OrderDetailPage() {
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [isChargingWallet, setIsChargingWallet] = useState(false);
   const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [pendingRestoreStatus, setPendingRestoreStatus] = useState<string | null>(null);
 
   // Fetch single order
   useEffect(() => {
@@ -211,8 +222,34 @@ export default function OrderDetailPage() {
 
   // Handle status change — block delivery/completion if payment is not paid
   const DELIVERY_STATUSES = ['delivered', 'completed'];
-  const handleStatusChange = async (newStatus: string) => {
+
+  const handleConfirmedStatusChange = async (newStatus: string) => {
     if (!id || !order) return;
+    try {
+      setIsUpdatingStatus(true);
+      await updateOrderStatus(id, newStatus as any);
+      setOrder((prev: any) => ({
+        ...prev,
+        status: newStatus,
+        // backend resets paymentStatus to pending when restoring a cancelled order
+        ...(order.status === 'cancelled' ? { paymentStatus: 'pending' } : {}),
+      }));
+      toast.success(`Order status updated to ${statusLabel(newStatus)}`);
+    } catch {
+      toast.error('Failed to update status');
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleStatusChange = (newStatus: string) => {
+    if (!id || !order) return;
+
+    // Intercept: restoring a cancelled order needs confirmation
+    if (order.status === 'cancelled') {
+      setPendingRestoreStatus(newStatus);
+      return;
+    }
 
     const currentPayment = order.paymentStatus || order.payment?.status || 'unpaid';
     if (DELIVERY_STATUSES.includes(newStatus) && currentPayment !== 'paid') {
@@ -222,16 +259,7 @@ export default function OrderDetailPage() {
       return;
     }
 
-    try {
-      setIsUpdatingStatus(true);
-      await updateOrderStatus(id, newStatus as any);
-      setOrder((prev: any) => ({ ...prev, status: newStatus }));
-      toast.success(`Order status updated to ${statusLabel(newStatus)}`);
-    } catch {
-      toast.error('Failed to update status');
-    } finally {
-      setIsUpdatingStatus(false);
-    }
+    handleConfirmedStatusChange(newStatus);
   };
 
   // Handle payment status change
@@ -359,10 +387,13 @@ export default function OrderDetailPage() {
             <SelectContent>
               {ORDER_STATUSES.map((s) => {
                 const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-                const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
+                const isRestoring = order.status === 'cancelled';
+                const blocked =
+                  (['delivered', 'completed'].includes(s) && payStatus !== 'paid') ||
+                  (isRestoring && !['pending', 'confirmed'].includes(s));
                 return (
                   <SelectItem key={s} value={s} disabled={blocked}>
-                    {statusLabel(s)}{blocked ? ' (payment required)' : ''}
+                    {statusLabel(s)}{!isRestoring && blocked ? ' (payment required)' : ''}
                   </SelectItem>
                 );
               })}
@@ -1042,6 +1073,34 @@ export default function OrderDetailPage() {
         order={order}
         onSuccess={() => setOrder((prev: any) => ({ ...prev, status: 'cancelled' }))}
       />
+
+      <AlertDialog
+        open={!!pendingRestoreStatus}
+        onOpenChange={(o) => { if (!o) setPendingRestoreStatus(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore Cancelled Order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will move the order back to{' '}
+              <strong>{statusLabel(pendingRestoreStatus ?? '')}</strong> and reset its payment
+              status to <em>pending</em>. Any wallet refund already issued will not be reversed
+              automatically.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRestoreStatus) handleConfirmedStatusChange(pendingRestoreStatus);
+                setPendingRestoreStatus(null);
+              }}
+            >
+              Yes, Restore Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
