@@ -225,14 +225,15 @@ export default function OrderDetailPage() {
 
   const handleConfirmedStatusChange = async (newStatus: string) => {
     if (!id || !order) return;
+    const wasCAncelled = order.status === 'cancelled';
     try {
       setIsUpdatingStatus(true);
       await updateOrderStatus(id, newStatus as any);
       setOrder((prev: any) => ({
         ...prev,
         status: newStatus,
-        // backend resets paymentStatus to pending when restoring a cancelled order
-        ...(order.status === 'cancelled' ? { paymentStatus: 'pending' } : {}),
+        // backend resets paymentStatus to unpaid when restoring a cancelled order
+        ...(wasCAncelled ? { paymentStatus: 'unpaid' } : {}),
       }));
       toast.success(`Order status updated to ${statusLabel(newStatus)}`);
     } catch {
@@ -244,12 +245,6 @@ export default function OrderDetailPage() {
 
   const handleStatusChange = (newStatus: string) => {
     if (!id || !order) return;
-
-    // Intercept: restoring a cancelled order needs confirmation
-    if (order.status === 'cancelled') {
-      setPendingRestoreStatus(newStatus);
-      return;
-    }
 
     const currentPayment = order.paymentStatus || order.payment?.status || 'unpaid';
     if (DELIVERY_STATUSES.includes(newStatus) && currentPayment !== 'paid') {
@@ -331,6 +326,13 @@ export default function OrderDetailPage() {
   const items = order.items || [];
   const statusHistory = order.statusHistory || [];
 
+  // For cancelled orders: derive the status the order had just before cancellation
+  const previousStatus: string = (() => {
+    if (order.status !== 'cancelled') return order.status;
+    const prev = [...statusHistory].reverse().find((h: any) => h.status !== 'cancelled');
+    return prev?.status || 'pending';
+  })();
+
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Header */}
@@ -376,26 +378,38 @@ export default function OrderDetailPage() {
             </Button>
           )}
           <OrderStatusBadge status={order.status} />
-          <Select
-            value={order.status}
-            onValueChange={handleStatusChange}
-            disabled={isUpdatingStatus}
-          >
-            <SelectTrigger className="w-40 sm:w-48">
-              <SelectValue placeholder="Update Status" />
-            </SelectTrigger>
-            <SelectContent>
-              {ORDER_STATUSES.map((s) => {
-                const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-                const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
-                return (
-                  <SelectItem key={s} value={s} disabled={blocked}>
-                    {statusLabel(s)}{blocked ? ' (payment required)' : ''}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
+          {order.status === 'cancelled' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPendingRestoreStatus(previousStatus)}
+              disabled={isUpdatingStatus}
+            >
+              {isUpdatingStatus && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Restore Order
+            </Button>
+          ) : (
+            <Select
+              value={order.status}
+              onValueChange={handleStatusChange}
+              disabled={isUpdatingStatus}
+            >
+              <SelectTrigger className="w-40 sm:w-48">
+                <SelectValue placeholder="Update Status" />
+              </SelectTrigger>
+              <SelectContent>
+                {ORDER_STATUSES.map((s) => {
+                  const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
+                  const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
+                  return (
+                    <SelectItem key={s} value={s} disabled={blocked}>
+                      {statusLabel(s)}{blocked ? ' (payment required)' : ''}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
