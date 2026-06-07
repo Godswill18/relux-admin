@@ -387,13 +387,10 @@ export default function OrderDetailPage() {
             <SelectContent>
               {ORDER_STATUSES.map((s) => {
                 const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-                const isRestoring = order.status === 'cancelled';
-                const blocked =
-                  (['delivered', 'completed'].includes(s) && payStatus !== 'paid') ||
-                  (isRestoring && !['pending', 'confirmed'].includes(s));
+                const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
                 return (
                   <SelectItem key={s} value={s} disabled={blocked}>
-                    {statusLabel(s)}{!isRestoring && blocked ? ' (payment required)' : ''}
+                    {statusLabel(s)}{blocked ? ' (payment required)' : ''}
                   </SelectItem>
                 );
               })}
