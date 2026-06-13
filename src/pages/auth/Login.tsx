@@ -37,6 +37,7 @@ export default function Login() {
       case Role.ADMIN:
       case Role.MANAGER:
       case Role.RECEPTIONIST:
+      case Role.DEVELOPER:
         return '/admin';
       case Role.STAFF:
         return '/staff';
@@ -47,7 +48,7 @@ export default function Login() {
     }
   }
 
-  const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'receptionist', 'delivery'];
+  const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'receptionist', 'delivery', 'developer'];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -18,7 +18,7 @@ import { StaffProductivityChart } from './charts/StaffProductivityChart';
 // ============================================================================
 
 export default function ReportsPage() {
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin' || s.user?.role === 'developer');
   const [activeTab, setActiveTab] = useState(isAdmin ? 'revenue' : 'orders');
   const {
     dashboardStats,

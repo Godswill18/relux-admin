@@ -163,7 +163,7 @@ function StaffCard({ s, showRevenue }: { s: any; showRevenue: boolean }) {
 
 export function StaffProductivityChart() {
   const { staffProductivity, isLoading, fetchStaffProductivity } = useAnalyticsStore();
-  const isAdmin = useAuthStore((s) => s.user?.role === 'admin');
+  const isAdmin = useAuthStore((s) => s.user?.role === 'admin' || s.user?.role === 'developer');
 
   const [startDate, setStartDate] = useState('');
   const [endDate,   setEndDate]   = useState('');

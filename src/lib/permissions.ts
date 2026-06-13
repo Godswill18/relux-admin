@@ -99,6 +99,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.VIEW_ORDERS,
     Permission.UPDATE_ORDER_STATUS,
   ],
+
+  [Role.DEVELOPER]: [
+    // Developer has all permissions
+    ...Object.values(Permission),
+  ],
 };
 
 // ----------------------------------------------------------------------------

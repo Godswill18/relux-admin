@@ -64,7 +64,7 @@ function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
       </span>
     );
   }
-  if (role === 'admin' || role === 'manager' || role === 'receptionist') {
+  if (role === 'admin' || role === 'manager' || role === 'receptionist' || role === 'developer') {
     return (
       <span className="inline-flex items-center rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 px-1.5 py-0 text-[10px] font-medium border border-violet-200 dark:border-violet-800">
         Admin

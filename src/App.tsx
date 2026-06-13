@@ -72,6 +72,10 @@ function RootRedirect() {
     return <Navigate to="/delivery" replace />;
   }
 
+  if (roleString === 'DEVELOPER' || roleString === Role.DEVELOPER) {
+    return <Navigate to="/admin" replace />;
+  }
+
   // Default to admin for ADMIN, MANAGER, RECEPTIONIST
   return <Navigate to="/admin" replace />;
 }

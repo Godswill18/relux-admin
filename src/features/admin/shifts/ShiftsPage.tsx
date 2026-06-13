@@ -98,7 +98,7 @@ export default function ShiftsPage() {
   const canManageShifts = useHasPermission(Permission.MANAGE_SHIFTS);
   const currentUser = useCurrentUser();
   // Only admin sees all shifts — manager, receptionist, and staff each see only their own
-  const isAdmin = (currentUser?.role as string)?.toLowerCase() === 'admin';
+  const isAdmin = (currentUser?.role as string)?.toLowerCase() === 'admin' || (currentUser?.role as string)?.toLowerCase() === 'developer';
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);

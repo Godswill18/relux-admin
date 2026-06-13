@@ -148,7 +148,7 @@ function OrdersTooltip({ active, payload }: any) {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'developer';
   const { banners, popups } = useFetchAnnouncements();
   const { orders, fetchOrders, isLoading: ordersLoading } = useOrderStore();
   const { customers, fetchCustomers } = useCustomerStore();

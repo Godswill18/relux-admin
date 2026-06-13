@@ -201,6 +201,7 @@ export enum Role {
   STAFF = 'STAFF',
   RECEPTIONIST = 'RECEPTIONIST',
   DELIVERY = 'DELIVERY',
+  DEVELOPER = 'DEVELOPER',
 }
 
 // ----------------------------------------------------------------------------

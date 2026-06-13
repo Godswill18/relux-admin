@@ -33,9 +33,11 @@ function getDefaultDashboard(role: Role | string): string {
     case Role.ADMIN:
     case Role.MANAGER:
     case Role.RECEPTIONIST:
+    case Role.DEVELOPER:
     case 'ADMIN':
     case 'MANAGER':
     case 'RECEPTIONIST':
+    case 'DEVELOPER':
       return '/admin';
     case Role.STAFF:
     case 'STAFF':
@@ -59,18 +61,20 @@ function isRoleAllowed(role: Role | string): boolean {
     return false;
   }
 
-  // Allow admin, manager, receptionist, staff, and delivery roles
+  // Allow admin, manager, receptionist, staff, delivery, and developer roles
   return [
     Role.ADMIN,
     Role.MANAGER,
     Role.RECEPTIONIST,
     Role.STAFF,
     Role.DELIVERY,
+    Role.DEVELOPER,
     'ADMIN',
     'MANAGER',
     'RECEPTIONIST',
     'STAFF',
     'DELIVERY',
+    'DEVELOPER',
   ].includes(normalizedRole as any);
 }
 
@@ -136,9 +140,10 @@ export function ProtectedRoute({
 
   // Check permissions if required
   if (requiredPermissions.length > 0) {
-    // Admin role has implicit access to all routes (permissions cannot be restricted)
+    // Admin and developer roles have implicit access to all routes
     const isAdminRole =
-      normalizedRole === 'ADMIN' || normalizedRole === Role.ADMIN;
+      normalizedRole === 'ADMIN' || normalizedRole === Role.ADMIN ||
+      normalizedRole === 'DEVELOPER' || normalizedRole === Role.DEVELOPER;
 
     if (isAdminRole) {
       return <>{children}</>;

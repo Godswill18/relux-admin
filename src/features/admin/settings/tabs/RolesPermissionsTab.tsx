@@ -5,6 +5,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRoleStore, RoleDoc } from '@/stores/useRoleStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { PERMISSION_GROUPS, PERMISSION_LABELS } from '@/lib/permissions';
 import { Permission } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -168,6 +169,11 @@ function PermissionGroup({ group, permissions, draft, locked, onToggle }: Permis
 export function RolesPermissionsTab() {
   const { roles, roleUsers, isLoading, isSaving, fetchRoles, updateRolePermissions, fetchRoleUsers, assignUserToRole } =
     useRoleStore();
+  const currentUser = useAuthStore((s) => s.user);
+  // Hide the developer role from non-developer users (defense in depth; backend already filters)
+  const visibleRoles = roles.filter(
+    (r) => r.name !== 'developer' || currentUser?.role?.toLowerCase() === 'developer'
+  );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Set<string>>(new Set());
@@ -251,7 +257,7 @@ export function RolesPermissionsTab() {
       {/* ── Mobile: role selector as horizontal scroll strip ─────────────── */}
       <div className="md:hidden">
         <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          {roles.map((role) => {
+          {visibleRoles.map((role) => {
             const active = role._id === selectedId;
             return (
               <button
@@ -285,7 +291,7 @@ export function RolesPermissionsTab() {
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-3">
             Roles
           </p>
-          {roles.map((role) => {
+          {visibleRoles.map((role) => {
             const users = roleUsers[role._id] ?? [];
             const active = role._id === selectedId;
             return (
@@ -381,7 +387,7 @@ export function RolesPermissionsTab() {
           open={!!assignDialogUser}
           onOpenChange={(v) => { if (!v) setAssignDialogUser(null); }}
           user={assignDialogUser}
-          roles={roles}
+          roles={visibleRoles}
           onAssign={async (roleId) => {
             await assignUserToRole(roleId, assignDialogUser._id);
             roles.forEach((r) => fetchRoleUsers(r._id));

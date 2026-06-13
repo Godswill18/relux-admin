@@ -175,9 +175,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     return <StaffLayout>{children}</StaffLayout>;
   }
 
-  // Admin role always gets the full nav (their permissions cannot be restricted).
+  // Admin and developer roles always get the full nav (permissions cannot be restricted).
   // Other roles (manager, receptionist) are filtered by the permissions in JWT.
-  const isAdmin = normalizedRole === 'ADMIN';
+  const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'DEVELOPER';
   const navItems: NavItem[] = useMemo(
     () =>
       isAdmin
@@ -188,10 +188,17 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     [isAdmin, permissions]
   );
 
+  const headerTitle =
+    normalizedRole === 'DEVELOPER'
+      ? 'Superadmin Dashboard'
+      : normalizedRole === 'ADMIN'
+      ? 'Admin Dashboard'
+      : 'Manager Dashboard';
+
   return (
     <BaseLayout
       navItems={navItems}
-      headerTitle={isAdmin ? 'Admin Dashboard' : 'Manager Dashboard'}
+      headerTitle={headerTitle}
       logoText="Relux Laundry"
     >
       {children}
