@@ -81,8 +81,8 @@ const isLive = (a: Announcement) => {
 };
 
 // Resolve a stored imageUrl (may be a /uploads/ path or empty) to a displayable URL.
-const SERVER_ORIGIN = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1')
-  .replace(/\/api\/v\d+\/?$/, '');
+const SERVER_ORIGIN = import.meta.env.VITE_UPLOADS_BASE_URL ||
+  (import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1').replace(/\/api\/v\d+\/?$/, '');
 
 function resolveImageUrl(imageUrl: string | undefined): string {
   if (!imageUrl) return '';
