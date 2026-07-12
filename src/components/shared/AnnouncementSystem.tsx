@@ -125,12 +125,14 @@ export function AnnouncementBanners({ items }: BannerProps) {
             }`}
           >
             {imgSrc && (
-              <img
-                src={imgSrc}
-                alt=""
-                className="h-10 w-10 rounded object-cover shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              <div className="h-10 w-10 rounded bg-muted shrink-0 overflow-hidden flex items-center justify-center">
+                <img
+                  src={imgSrc}
+                  alt=""
+                  className="h-full w-full object-contain"
+                  onError={(e) => { (e.target as HTMLImageElement).parentElement!.style.display = 'none'; }}
+                />
+              </div>
             )}
             {!imgSrc && (
               <Megaphone className={`h-5 w-5 mt-0.5 shrink-0 ${isPromo ? 'text-purple-600' : 'text-blue-600'}`} />
@@ -223,7 +225,7 @@ export function AnnouncementPopups({ items }: PopupsProps) {
             <img
               src={currentImg}
               alt={current.title}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
           </div>

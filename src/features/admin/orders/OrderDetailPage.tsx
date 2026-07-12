@@ -778,6 +778,9 @@ export default function OrderDetailPage() {
                         {entry.updatedBy && (
                           <div className="text-xs text-muted-foreground mt-1">
                             by {entry.updatedBy?.name || 'System'}
+                            {entry.actorRole === 'customer' && (
+                              <span className="ml-1 text-amber-600 dark:text-amber-400">(customer)</span>
+                            )}
                           </div>
                         )}
                         {entry.notes && (

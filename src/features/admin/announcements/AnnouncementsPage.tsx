@@ -159,7 +159,7 @@ function ImagePicker({
           <img
             src={preview}
             alt="Preview"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
           {uploading && (
@@ -524,7 +524,7 @@ export default function AnnouncementsPage() {
                       <img
                         src={imgSrc}
                         alt={item.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     </div>
