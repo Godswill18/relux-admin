@@ -26,8 +26,29 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useStaffStore } from '@/stores/useStaffStore';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { toast } from 'sonner';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+
+// Mirrors the rank rules the API enforces (utils/roleHierarchy.js): a user may
+// assign any role at or below their own, never above. Offering options the server
+// will reject with a 403 just produces a confusing failure at submit time.
+const ROLE_RANK: Record<string, number> = {
+  delivery: 1, staff: 1, receptionist: 2, manager: 3, admin: 4, developer: 5,
+};
+const ASSIGNABLE_ROLES = [
+  { value: 'admin',    label: 'Admin' },
+  { value: 'manager',  label: 'Manager' },
+  { value: 'receptionist', label: 'Receptionist' },
+  { value: 'staff',    label: 'Staff' },
+  { value: 'delivery', label: 'Delivery' },
+];
+function assignableBy(actorRole?: string) {
+  const role = String(actorRole || '').toLowerCase();
+  if (role === 'developer') return ASSIGNABLE_ROLES;
+  const actorRank = ROLE_RANK[role] ?? 0;
+  return ASSIGNABLE_ROLES.filter((r) => (ROLE_RANK[r.value] ?? 99) <= actorRank);
+}
 
 // ============================================================================
 // VALIDATION SCHEMA
@@ -38,7 +59,7 @@ const addStaffSchema = z.object({
   email: z.string().email('Invalid email').or(z.literal('')).optional(),
   phone: z.string().min(10, 'Phone must be at least 10 digits'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['admin', 'manager', 'staff', 'delivery']),
+  role: z.enum(['admin', 'manager', 'receptionist', 'staff', 'delivery']),
   staffRole: z.enum(['washer', 'delivery']).or(z.literal('')).optional(),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -66,6 +87,8 @@ interface AddStaffModalProps {
 
 export function AddStaffModal({ open, onOpenChange }: AddStaffModalProps) {
   const { createStaff } = useStaffStore();
+  const currentUserRole = useAuthStore((s) => s.user?.role);
+  const assignableRoles = assignableBy(currentUserRole as string | undefined);
   const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<AddStaffForm>({
@@ -221,10 +244,9 @@ export function AddStaffModal({ open, onOpenChange }: AddStaffModalProps) {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="manager">Manager</SelectItem>
-                          <SelectItem value="staff">Staff</SelectItem>
-                          <SelectItem value="delivery">Delivery</SelectItem>
+                          {assignableRoles.map((r) => (
+                            <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
