@@ -39,6 +39,18 @@ export function LoyaltySettingsTab() {
     ? `${local.walletConversionRate} pts = ₦1 (${local.minConvertPoints} pts minimum)`
     : '—';
 
+  // Both rates are expressed in the same unit — points per ₦1 — so they can be
+  // compared at a glance. They previously could not be: the redemption rate was
+  // stored as ₦ per point and was not editable here at all.
+  const previewRedemption = local.redemptionPointsPerCurrency > 0
+    ? `${local.redemptionPointsPerCurrency} pts = ₦1 off an order`
+    : '—';
+
+  const ratesDiffer =
+    local.redemptionPointsPerCurrency > 0 &&
+    local.walletConversionRate > 0 &&
+    local.redemptionPointsPerCurrency !== local.walletConversionRate;
+
   return (
     <div className="space-y-8 max-w-2xl">
 
@@ -229,16 +241,41 @@ export function LoyaltySettingsTab() {
         </div>
 
         {local.redemptionEnabled && (
-          <div className="space-y-1.5">
-            <Label htmlFor="minRedeem">Minimum points for redemption</Label>
-            <Input
-              id="minRedeem"
-              type="number"
-              min="0"
-              value={local.minRedeemPoints}
-              onChange={(e) => set({ minRedeemPoints: parseInt(e.target.value) || 0 })}
-            />
-          </div>
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="redeemRate">Redemption rate (pts per ₦1)</Label>
+              <Input
+                id="redeemRate"
+                type="number"
+                min="1"
+                value={local.redemptionPointsPerCurrency}
+                onChange={(e) =>
+                  set({ redemptionPointsPerCurrency: parseInt(e.target.value) || 1 })
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                {previewRedemption}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="minRedeem">Minimum points for redemption</Label>
+              <Input
+                id="minRedeem"
+                type="number"
+                min="0"
+                value={local.minRedeemPoints}
+                onChange={(e) => set({ minRedeemPoints: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+
+            {ratesDiffer && (
+              <p className="text-xs text-amber-600 dark:text-amber-500">
+                Order discounts are priced differently from wallet conversion. Customers
+                will see two rates.
+              </p>
+            )}
+          </>
         )}
       </section>
 

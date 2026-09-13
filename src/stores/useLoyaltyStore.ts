@@ -18,6 +18,7 @@ interface LoyaltySettings {
   minConvertPoints: number;           // minimum points needed to convert
   minRedeemPoints: number;
   redemptionEnabled: boolean;
+  redemptionPointsPerCurrency: number; // X points = ₦1 of order discount
   maxPointsPerOrder?: number;
   bonusFirstOrderPoints: number;
   bonusSecondOrderPoints: number;
@@ -60,6 +61,7 @@ export const useLoyaltyStore = create<LoyaltyState>((set, get) => ({
     minConvertPoints: 100,
     minRedeemPoints: 100,
     redemptionEnabled: true,
+    redemptionPointsPerCurrency: 100,
     bonusFirstOrderPoints: 0,
     bonusSecondOrderPoints: 0,
     weekendMultiplierEnabled: false,
