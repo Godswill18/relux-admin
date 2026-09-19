@@ -16,7 +16,9 @@ export interface AttendanceRecord {
     name: string;
     role: string;
     staffRole?: string;
-  } | string;
+    // null when the staff account behind this record has since been deleted —
+    // staff deletion is a hard delete, so the populate has nothing to resolve.
+  } | string | null;
   shiftId?: {
     _id: string;
     startDate: string;

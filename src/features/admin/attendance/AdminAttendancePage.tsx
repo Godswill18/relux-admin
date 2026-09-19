@@ -64,15 +64,20 @@ import { useGeolocation, GeoPosition } from '@/hooks/useGeolocation';
 // HELPERS
 // ============================================================================
 
+// `typeof null === 'object'`, so the old `typeof record.userId === 'object'`
+// guard let null through and `.name` threw — blanking the whole History tab.
+// userId is null whenever the staff member behind a record has been deleted
+// (a hard delete leaves the attendance rows behind), which is why Today never
+// crashed but History, reaching back past former staff, always did.
 function staffName(record: AttendanceRecord): string {
-  if (typeof record.userId === 'object') return record.userId.name;
-  return '—';
+  const u = record.userId;
+  if (u && typeof u === 'object') return u.name || '—';
+  return 'Former staff';
 }
 
 function staffRole(record: AttendanceRecord): string {
-  if (typeof record.userId === 'object') {
-    return record.userId.staffRole || record.userId.role || '—';
-  }
+  const u = record.userId;
+  if (u && typeof u === 'object') return u.staffRole || u.role || '—';
   return '—';
 }
 
