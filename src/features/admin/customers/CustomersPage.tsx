@@ -83,7 +83,7 @@ export default function CustomersPage() {
 
   interface CustomerStats {
     total: number; active: number; newThisMonth: number; inactive: number;
-    portalActive?: number; unregistered?: number; pendingVerification?: number;
+    portalActive?: number; unregistered?: number; pendingVerification?: number; notEligible?: number;
     activationRate?: number;
   }
   const [serverStats, setServerStats] = useState<CustomerStats | null>(null);
@@ -173,8 +173,10 @@ export default function CustomersPage() {
     active:       serverStats?.active       ?? customerList.filter((c) => c.isActive !== false).length,
     newThisMonth: serverStats?.newThisMonth ?? customerList.filter((c) => { const d = new Date(c.createdAt); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length,
     inactive:     serverStats?.inactive     ?? customerList.filter((c) => c.isActive === false).length,
-    portalActive: serverStats?.portalActive ?? customerList.filter((c) => c.portalStatus === 'ACTIVE').length,
-    unregistered: serverStats?.unregistered ?? customerList.filter((c) => c.portalStatus === 'UNREGISTERED').length,
+    // Server figures only — a client-side guess from partial or older data is
+    // exactly how a wrong "Not Activated" figure gets shown.
+    portalActive: serverStats?.portalActive ?? null,
+    unregistered: serverStats?.unregistered ?? null,
     activationRate: serverStats?.activationRate ?? null,
   };
 
@@ -395,10 +397,10 @@ export default function CustomersPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Portal Active</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Activated Accounts</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold tabular-nums">{stats.portalActive}</div>
+            <div className="text-2xl font-bold tabular-nums">{stats.portalActive ?? '—'}</div>
             <p className="text-xs text-muted-foreground mt-0.5">{stats.activationRate != null ? `${stats.activationRate}% activation rate` : 'Using the customer app'}</p>
           </CardContent>
         </Card>
@@ -407,8 +409,8 @@ export default function CustomersPage() {
             <CardTitle className="text-xs sm:text-sm font-medium">Not Activated</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold tabular-nums">{stats.unregistered}</div>
-            <p className="text-xs text-muted-foreground mt-0.5">Customers without an online account</p>
+            <div className="text-2xl font-bold tabular-nums">{stats.unregistered ?? '—'}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Walk-in customers who can activate online</p>
           </CardContent>
         </Card>
         <Card>
@@ -453,9 +455,10 @@ export default function CustomersPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Customers</SelectItem>
-            <SelectItem value="portal:active">Portal Active</SelectItem>
-            <SelectItem value="portal:unregistered">Not Registered</SelectItem>
-            <SelectItem value="portal:pending">Pending Verification</SelectItem>
+            <SelectItem value="portal:active">Activated</SelectItem>
+            <SelectItem value="portal:unregistered">Not Activated (walk-in)</SelectItem>
+            <SelectItem value="portal:pending">Pending Activation</SelectItem>
+            <SelectItem value="portal:not_eligible">No Online Account</SelectItem>
             <SelectItem value="deactivated">Deactivated</SelectItem>
           </SelectContent>
         </Select>

@@ -197,7 +197,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const [conflict, setConflict] = useState<ConflictCandidate[] | null>(null);
   const watchedPhone = form.watch('walkInCustomer.phone');
   const watchedEmail = form.watch('walkInCustomer.email');
-  const { match: customerMatch, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
+  const { match: customerMatch, matchKind, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
 
   const handleSelectExistingCustomer = (customerId: string) => {
     const customer = (Array.isArray(customers) ? customers : []).find(
@@ -434,8 +434,11 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
             ) : (
               <CustomerMatchNotice
                 match={customerMatch}
+                matchKind={matchKind}
                 checking={checkingMatch}
                 hasContact={!!(watchedPhone || watchedEmail)}
+                confirmedRecordId={selectedRecordId}
+                onConfirm={setSelectedRecordId}
               />
             )}
           </div>

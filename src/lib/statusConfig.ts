@@ -201,29 +201,46 @@ export const CUSTOMER_ACCOUNT_STATUS_CONFIG: Record<string, StatusConfig> = {
  */
 export const PORTAL_STATUS_CONFIG: Record<string, StatusConfig> = {
   ACTIVE: {
-    label: 'Portal Active',
+    label: 'Activated',
     hex: '#16a34a',
     className: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400',
   },
+  // Only an identifiable walk-in customer (walk-in history + phone/email) with
+  // no account. Not "any customer without an account".
   UNREGISTERED: {
     label: 'Not Activated',
-    hex: '#64748b',
-    className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300',
-  },
-  PENDING_VERIFICATION: {
-    label: 'Pending Verification',
     hex: '#d97706',
     className: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  PENDING_VERIFICATION: {
+    label: 'Pending Activation',
+    hex: '#2563eb',
+    className: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400',
   },
   DEACTIVATED: {
     label: 'Deactivated',
     hex: '#ef4444',
     className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400',
   },
+  // A customer, counted as one, with nothing to claim an account with.
+  NOT_ELIGIBLE: {
+    label: 'No Online Account',
+    hex: '#64748b',
+    className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300',
+  },
+};
+
+// Deliberately NOT falling back to "Not Activated". A missing status means the
+// data did not arrive (e.g. an older API), and guessing turned every customer
+// into "Not Activated". Show it as unknown instead.
+const UNKNOWN_PORTAL_STATUS: StatusConfig = {
+  label: 'Status unavailable',
+  hex: '#94a3b8',
+  className: 'bg-slate-50 text-slate-500 border-dashed border-slate-300 dark:bg-slate-900 dark:text-slate-400',
 };
 
 export function getPortalStatusConfig(status?: string): StatusConfig {
-  return PORTAL_STATUS_CONFIG[status || 'UNREGISTERED'] ?? PORTAL_STATUS_CONFIG.UNREGISTERED;
+  return (status && PORTAL_STATUS_CONFIG[status]) || UNKNOWN_PORTAL_STATUS;
 }
 
 /** For the isActive boolean on User documents */

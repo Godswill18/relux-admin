@@ -114,8 +114,13 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
           {customer.portalStatus === 'UNREGISTERED' && (
             <p className="text-xs text-muted-foreground">
               {customer.email
-                ? 'This customer can activate an online account from the sign-up page using this email.'
-                : 'No email on file — add one so this customer can activate an online account.'}
+                ? 'Walk-in customer without an online account. They can activate one from the sign-up page ("Already a Relux Laundry customer?") with this email.'
+                : 'Walk-in customer without an online account. The activation code is sent by email, so add an email address before they can activate online.'}
+            </p>
+          )}
+          {customer.portalStatus === 'NOT_ELIGIBLE' && (
+            <p className="text-xs text-muted-foreground">
+              No online account, and no walk-in history with contact details to activate one with. Still counted as a customer.
             </p>
           )}
           {customer.needsReview && (

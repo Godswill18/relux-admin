@@ -144,9 +144,12 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
 
   // Existing-customer detection and phone/email conflict resolution
   const [conflict, setConflict] = useState<ConflictCandidate[] | null>(null);
+  // Set when staff confirm an account-only match (unverified phone on a
+  // registered account) — sent as customerRecordId so the order joins it.
+  const [confirmedRecordId, setConfirmedRecordId] = useState<string | null>(null);
   const watchedPhone = form.watch('customerPhone');
   const watchedEmail = form.watch('customerEmail');
-  const { match: customerMatch, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
+  const { match: customerMatch, matchKind, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
 
   const onSubmit = async (data: OfflineOrderForm, customerRecordId?: string) => {
     try {
@@ -170,7 +173,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
           phone: data.customerPhone,
           email: data.customerEmail || undefined,
         },
-        customerRecordId,
+        customerRecordId: customerRecordId || confirmedRecordId || undefined,
         serviceType:              primaryService,
         serviceLevel:             selectedLevel?.name || '',
         serviceLevelId:           serviceLevelId || undefined,
@@ -194,6 +197,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
 
       toast.success(customerOutcomeMessage(res.data?.data?.customerRecord));
       setConflict(null);
+      setConfirmedRecordId(null);
       form.reset();
       onOpenChange(false);
       onSuccess();
@@ -208,6 +212,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
   const handleClose = () => {
     if (isSubmitting) return;
     setConflict(null);
+    setConfirmedRecordId(null);
     form.reset();
     onOpenChange(false);
   };
@@ -254,7 +259,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                         <Input
                           placeholder="08012345678"
                           {...field}
-                          onChange={(e) => { field.onChange(e); setConflict(null); }}
+                          onChange={(e) => { field.onChange(e); setConflict(null); setConfirmedRecordId(null); }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -273,7 +278,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                           placeholder="customer@example.com"
                           {...field}
                           value={field.value ?? ''}
-                          onChange={(e) => { field.onChange(e); setConflict(null); }}
+                          onChange={(e) => { field.onChange(e); setConflict(null); setConfirmedRecordId(null); }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -290,8 +295,11 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
               ) : (
                 <CustomerMatchNotice
                   match={customerMatch}
+                  matchKind={matchKind}
                   checking={checkingMatch}
                   hasContact={!!(watchedPhone || watchedEmail)}
+                  confirmedRecordId={confirmedRecordId}
+                  onConfirm={setConfirmedRecordId}
                 />
               )}
             </div>

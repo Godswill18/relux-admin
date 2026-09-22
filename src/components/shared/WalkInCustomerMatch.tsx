@@ -22,7 +22,15 @@ export interface CustomerLookupResult {
   portalStatus: string;
   customerStatus: string;
   orderCount: number;
+  recordPhone?: string | null;
+  recordEmail?: string | null;
 }
+
+// 'record'  — matched the customer record's own phone/email. The backend makes
+//             the same match when the order is saved, so it is automatic.
+// 'account' — matched only the phone on a registered portal account, which is
+//             never verified. Not proof of identity: staff must confirm.
+export type MatchKind = 'record' | 'account';
 
 export interface ConflictCandidate {
   customerRecordId: string;
@@ -38,13 +46,14 @@ const emailKey = (e?: string | null) => (e || '').trim().toLowerCase();
 /** Exact phone/email match for what staff have typed, looked up as they type. */
 export function useWalkInCustomerMatch(phone?: string, email?: string) {
   const [match, setMatch] = useState<CustomerLookupResult | null>(null);
+  const [matchKind, setMatchKind] = useState<MatchKind | null>(null);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     const p = phoneKey(phone);
     const e = emailKey(email);
     const query = p.length === 10 ? p : (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : '');
-    if (!query) { setMatch(null); return; }
+    if (!query) { setMatch(null); setMatchKind(null); return; }
 
     let cancelled = false;
     const t = setTimeout(async () => {
@@ -52,12 +61,19 @@ export function useWalkInCustomerMatch(phone?: string, email?: string) {
       try {
         const res = await apiClient.get('/customers/lookup', { params: { q: query } });
         const rows: CustomerLookupResult[] = res.data?.data?.customers || [];
-        const exact = rows.find((r) =>
+        const onRecord = rows.find((r) =>
+          (p.length === 10 && phoneKey(r.recordPhone) === p) || (e && emailKey(r.recordEmail) === e)
+        );
+        const onAccount = !onRecord && rows.find((r) =>
           (p.length === 10 && phoneKey(r.phone) === p) || (e && emailKey(r.email) === e)
         );
-        if (!cancelled) setMatch(exact || null);
+        if (!cancelled) {
+          setMatch(onRecord || onAccount || null);
+          setMatchKind(onRecord ? 'record' : onAccount ? 'account' : null);
+        }
       } catch {
-        if (!cancelled) setMatch(null); // informational only — never blocks the form
+        // informational only — never blocks the form
+        if (!cancelled) { setMatch(null); setMatchKind(null); }
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -65,14 +81,41 @@ export function useWalkInCustomerMatch(phone?: string, email?: string) {
     return () => { cancelled = true; clearTimeout(t); };
   }, [phone, email]);
 
-  return { match, checking };
+  return { match, matchKind, checking };
 }
 
 /** "Existing customer found" / "New customer" notice under the contact fields. */
 export function CustomerMatchNotice({
-  match, checking, hasContact,
-}: { match: CustomerLookupResult | null; checking: boolean; hasContact: boolean }) {
+  match, matchKind, checking, hasContact, confirmedRecordId, onConfirm,
+}: {
+  match: CustomerLookupResult | null;
+  matchKind?: MatchKind | null;
+  checking: boolean;
+  hasContact: boolean;
+  confirmedRecordId?: string | null;
+  onConfirm?: (customerRecordId: string) => void;
+}) {
   if (!hasContact || checking) return null;
+  if (match && matchKind === 'account' && confirmedRecordId !== match.customerRecordId) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2.5 text-sm dark:border-amber-800 dark:bg-amber-950/30">
+        <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-700 dark:text-amber-400 shrink-0" />
+        <div className="min-w-0 space-y-1.5">
+          <p className="font-medium text-amber-900 dark:text-amber-300">
+            A registered account uses these contact details: {match.name}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            They're on the online account but not on a customer record, and may not be verified. Confirm this is the customer in front of you before adding the order to their account.
+          </p>
+          {onConfirm && (
+            <Button type="button" size="sm" variant="outline" onClick={() => onConfirm(match.customerRecordId)}>
+              Yes, this is {match.name.split(' ')[0]}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (match) {
     return (
       <div className="flex items-start gap-2 rounded-md border border-green-200 bg-green-50 p-2.5 text-sm dark:border-green-900 dark:bg-green-950/30">
