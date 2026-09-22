@@ -7,7 +7,7 @@ import apiClient from '@/lib/api/client';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, UserX, UserCheck, Wallet, Award,
-  Search, Phone, Users, ArrowUpDown,
+  Search, Phone, Users, ArrowUpDown, AlertTriangle,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -87,6 +88,7 @@ export default function CustomersPage() {
     activationRate?: number;
   }
   const [serverStats, setServerStats] = useState<CustomerStats | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const hasFetchedStats = useRef(false);
 
   useEffect(() => {
@@ -95,7 +97,8 @@ export default function CustomersPage() {
       hasFetchedStats.current = true;
       apiClient.get('/users/customer-stats')
         .then((res) => setServerStats(res.data?.data ?? null))
-        .catch(() => {});
+        // Say the figures failed to load rather than leave the cards blank.
+        .catch((err) => setStatsError(err?.response?.data?.message || 'Customer figures could not be loaded.'));
     }
   }, [fetchCustomers]);
 
@@ -165,6 +168,14 @@ export default function CustomersPage() {
         return list;
     }
   }, [filteredCustomers, sortBy]);
+
+  // The portal-status fields only exist on the current API. If the stats arrived
+  // without them, or rows arrived without portalStatus, the server is running
+  // an older build — say so, rather than leave "Status unavailable" on every
+  // row for someone to decode.
+  const apiOutdated =
+    (serverStats !== null && serverStats.portalActive === undefined) ||
+    (customerList.length > 0 && customerList.every((c) => c.portalStatus === undefined));
 
   // Stats — use server aggregates (accurate) with client fallback while loading
   const now = new Date();
@@ -383,6 +394,24 @@ export default function CustomersPage() {
         onConfirm={handleConfirmStatusChange}
       />
 
+      {statsError && !apiOutdated && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Customer figures didn&apos;t load</AlertTitle>
+          <AlertDescription>{statsError} The list below is unaffected.</AlertDescription>
+        </Alert>
+      )}
+      {apiOutdated && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>The server is running an older version</AlertTitle>
+          <AlertDescription>
+            Account status can&apos;t be shown because the API behind this page hasn&apos;t been
+            updated. Redeploy the backend (and restart it), then refresh this page.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* ── Stats Cards ─────────────────────────────────────────────────────── */}
       {/* Unique customer records — walk-in customers included, not portal logins. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -530,7 +559,7 @@ export default function CustomersPage() {
       <Card className="hidden md:block">
         <CardHeader>
           <CardTitle>All Customers</CardTitle>
-          <CardDescription>Users with role &quot;customer&quot;</CardDescription>
+          <CardDescription>Every customer, including walk-ins without an online account</CardDescription>
         </CardHeader>
         <CardContent>
           <DataTable
