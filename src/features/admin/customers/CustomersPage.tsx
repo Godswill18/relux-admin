@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import apiClient from '@/lib/api/client';
+import apiClient, { API_BASE_URL } from '@/lib/api/client';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, UserX, UserCheck, Wallet, Award,
@@ -176,6 +176,26 @@ export default function CustomersPage() {
   const apiOutdated =
     (serverStats !== null && serverStats.portalActive === undefined) ||
     (customerList.length > 0 && customerList.every((c) => c.portalStatus === undefined));
+
+  // When the data looks outdated, ask the API which build it is. /health sits at
+  // the server root, outside /api/v1, and needs no sign-in.
+  const [apiHealth, setApiHealth] = useState<
+    { ok: true; revision?: string; startedAt?: string; uptime?: number } | { ok: false } | null
+  >(null);
+  const healthUrl = API_BASE_URL.replace(/\/api(\/.*)?$/, '') + '/health';
+  useEffect(() => {
+    if (!apiOutdated || apiHealth) return;
+    fetch(healthUrl)
+      .then((r) => r.json())
+      .then((j) => setApiHealth({ ok: true, revision: j.revision, startedAt: j.startedAt, uptime: j.uptime }))
+      .catch(() => setApiHealth({ ok: false }));
+  }, [apiOutdated, apiHealth, healthUrl]);
+
+  const apiStarted = apiHealth?.ok
+    ? (apiHealth.startedAt
+        ? new Date(apiHealth.startedAt)
+        : (typeof apiHealth.uptime === 'number' ? new Date(Date.now() - apiHealth.uptime * 1000) : null))
+    : null;
 
   // Stats — use server aggregates (accurate) with client fallback while loading
   const now = new Date();
@@ -405,9 +425,30 @@ export default function CustomersPage() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertTitle>The server is running an older version</AlertTitle>
-          <AlertDescription>
-            Account status can&apos;t be shown because the API behind this page hasn&apos;t been
-            updated. Redeploy the backend (and restart it), then refresh this page.
+          <AlertDescription className="space-y-1.5">
+            <p>
+              Account status can&apos;t be shown because the API behind this page hasn&apos;t been
+              updated. Redeploy the backend from <code>main</code> (and restart it), then refresh this page.
+            </p>
+            {/* What the page is actually talking to — the facts needed to find why. */}
+            <ul className="text-xs list-disc pl-4 space-y-0.5 opacity-90">
+              <li>This page calls the API at <code className="break-all">{API_BASE_URL}</code></li>
+              {apiHealth === null && <li>Checking that server…</li>}
+              {apiHealth && !apiHealth.ok && <li>That server did not answer at <code className="break-all">{healthUrl}</code>.</li>}
+              {apiHealth?.ok && (
+                <>
+                  <li>
+                    That server last started{' '}
+                    {apiStarted ? <strong>{format(apiStarted, 'PPP p')}</strong> : 'at an unknown time'}.
+                  </li>
+                  <li>
+                    {apiHealth.revision
+                      ? <>It reports revision <code>{apiHealth.revision}</code> — current, so check this page is pointed at the right server.</>
+                      : <>It reports <strong>no revision</strong>, so it is running a build from before the customer update.</>}
+                  </li>
+                </>
+              )}
+            </ul>
           </AlertDescription>
         </Alert>
       )}
