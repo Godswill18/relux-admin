@@ -11,7 +11,10 @@ import apiClient from '@/lib/api/client';
 // ============================================================================
 
 interface CustomerFilters {
-  status?: CustomerStatus | 'all';
+  // 'active' / 'deactivated' filter on account access (User.isActive).
+  status?: CustomerStatus | 'all' | 'active' | 'deactivated';
+  // Portal account status: active | unregistered | pending | deactivated
+  portal?: 'all' | 'active' | 'unregistered' | 'pending' | 'deactivated';
   loyaltyTier?: string | 'all';
   search?: string;
 }
@@ -54,7 +57,8 @@ interface CustomerState {
   loadMoreCustomers: () => Promise<void>;
   createCustomer: (customerData: Partial<Customer>) => Promise<Customer | null>;
   updateCustomer: (customerId: string, data: Partial<Customer>) => Promise<void>;
-  deleteCustomer: (customerId: string) => Promise<void>;
+  deactivateCustomer: (customerId: string, reason?: string) => Promise<void>;
+  reactivateCustomer: (customerId: string) => Promise<void>;
   setSelectedCustomer: (customer: Customer | null) => void;
   setFilters: (filters: Partial<CustomerFilters>) => void;
 
@@ -72,6 +76,28 @@ interface CustomerState {
 // ============================================================================
 // CUSTOMER STORE
 // ============================================================================
+
+// Merge only the account-status fields from a status-change response. The
+// response carries customerId unpopulated; spreading it wholesale would replace
+// the populated profile (tier, points, status) and blank those columns.
+const applyStatusChange = (c: any, updated: any, active: boolean) => ({
+  ...c,
+  isActive: updated.isActive,
+  deactivatedAt: updated.deactivatedAt,
+  deactivatedBy: updated.deactivatedBy,
+  deactivationReason: updated.deactivationReason,
+  reactivatedAt: updated.reactivatedAt,
+  reactivatedBy: updated.reactivatedBy,
+  customerId: c.customerId && typeof c.customerId === 'object'
+    ? {
+        ...c.customerId,
+        // Mirror what the backend does to Customer.status
+        status: active
+          ? (c.customerId.status === 'suspended' ? 'active' : c.customerId.status)
+          : 'suspended',
+      }
+    : c.customerId,
+});
 
 export const useCustomerStore = create<CustomerState>((set, get) => ({
   // Initial state
@@ -97,6 +123,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       const params: any = { page: 1, limit: PAGE_LIMIT };
 
       if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.portal && filters.portal !== 'all') params.portal = filters.portal;
       if (filters.loyaltyTier && filters.loyaltyTier !== 'all') params.loyaltyTier = filters.loyaltyTier;
       if (filters.search) params.search = filters.search;
 
@@ -137,6 +164,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       const params: any = { page: nextPage, limit: PAGE_LIMIT };
 
       if (filters.status && filters.status !== 'all') params.status = filters.status;
+      if (filters.portal && filters.portal !== 'all') params.portal = filters.portal;
       if (filters.loyaltyTier && filters.loyaltyTier !== 'all') params.loyaltyTier = filters.loyaltyTier;
       if (filters.search) params.search = filters.search;
 
@@ -223,24 +251,30 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     }
   },
 
-  // Delete customer
-  deleteCustomer: async (customerId) => {
-    try {
-      const response = await apiClient.delete(`/customers/${customerId}`);
+  // Deactivate / reactivate — customers are never deleted. The record stays in
+  // the list and is updated in place, so the admin keeps seeing the customer
+  // (now marked Deactivated) along with all of their history.
+  deactivateCustomer: async (customerId, reason) => {
+    const response = await apiClient.patch(`/customers/${customerId}/deactivate`, { reason });
+    const updated = response.data?.data?.customer;
+    if (response.data.success && updated) {
+      set((state) => ({
+        customers: state.customers.map((c: any) =>
+          (c._id === customerId || c.id === customerId) ? applyStatusChange(c, updated, false) : c
+        ),
+      }));
+    }
+  },
 
-      if (response.data.success) {
-        set((state) => ({
-          customers: state.customers.filter(
-            (customer: any) => customer._id !== customerId && customer.id !== customerId
-          ),
-          selectedCustomer:
-            state.selectedCustomer?.id === customerId ? null : state.selectedCustomer,
-        }));
-      }
-    } catch (error: any) {
-      console.error('Error deleting customer:', error);
-      set({ error: error.response?.data?.message || 'Failed to delete customer' });
-      throw error;
+  reactivateCustomer: async (customerId) => {
+    const response = await apiClient.patch(`/customers/${customerId}/reactivate`);
+    const updated = response.data?.data?.customer;
+    if (response.data.success && updated) {
+      set((state) => ({
+        customers: state.customers.map((c: any) =>
+          (c._id === customerId || c.id === customerId) ? applyStatusChange(c, updated, true) : c
+        ),
+      }));
     }
   },
 

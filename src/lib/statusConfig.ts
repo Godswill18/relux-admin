@@ -194,6 +194,38 @@ export const CUSTOMER_ACCOUNT_STATUS_CONFIG: Record<string, StatusConfig> = {
   },
 };
 
+/**
+ * Portal account status — whether a customer can use the customer app.
+ * Separate from being a customer: an UNREGISTERED customer is a valid customer
+ * who simply has not activated online access, so it is neutral, not a warning.
+ */
+export const PORTAL_STATUS_CONFIG: Record<string, StatusConfig> = {
+  ACTIVE: {
+    label: 'Portal Active',
+    hex: '#16a34a',
+    className: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400',
+  },
+  UNREGISTERED: {
+    label: 'Not Activated',
+    hex: '#64748b',
+    className: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300',
+  },
+  PENDING_VERIFICATION: {
+    label: 'Pending Verification',
+    hex: '#d97706',
+    className: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400',
+  },
+  DEACTIVATED: {
+    label: 'Deactivated',
+    hex: '#ef4444',
+    className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400',
+  },
+};
+
+export function getPortalStatusConfig(status?: string): StatusConfig {
+  return PORTAL_STATUS_CONFIG[status || 'UNREGISTERED'] ?? PORTAL_STATUS_CONFIG.UNREGISTERED;
+}
+
 /** For the isActive boolean on User documents */
 export function getActiveStatusConfig(isActive?: boolean): StatusConfig {
   return isActive === false

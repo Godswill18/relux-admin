@@ -149,7 +149,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           orders: [newOrder, ...state.orders],
           isLoading: false,
         }));
-        return newOrder;
+        // Walk-in orders report whether an existing customer was used or a new
+        // record created; handed back to the caller without polluting the list.
+        return raw?.customerRecord ? { ...newOrder, customerRecord: raw.customerRecord } : newOrder;
       }
       return null;
     } catch (error: any) {

@@ -26,6 +26,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import {
+  useWalkInCustomerMatch, CustomerMatchNotice, IdentityConflictPicker,
+  getIdentityConflict, customerOutcomeMessage, type ConflictCandidate,
+} from '@/components/shared/WalkInCustomerMatch';
 import { useOrderStore } from '@/stores/useOrderStore';
 import { useCustomerStore } from '@/stores/useCustomerStore';
 import { useServiceStore } from '@/stores/useServiceStore';
@@ -51,6 +55,10 @@ const createOrderSchema = z.object({
   walkInCustomer: z.object({
     name:  z.string().min(1, 'Customer name is required'),
     phone: z.string().min(1, 'Customer phone is required'),
+    // Optional — lets the customer verify ownership by email and activate an
+    // online account later. There is no SMS verification, so without an email a
+    // walk-in cannot self-activate.
+    email: z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
   }),
   serviceLevel:        z.string().optional(), // kept for legacy compat
   serviceLevelId:      z.string().optional(), // DB id of the selected level
@@ -128,7 +136,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   const form = useForm<CreateOrderForm>({
     resolver: zodResolver(createOrderSchema),
     defaultValues: {
-      walkInCustomer:      { name: '', phone: '' },
+      walkInCustomer:      { name: '', phone: '', email: '' },
       serviceLevel:        '',
       serviceLevelId:      '',
       orderType:           'walk-in',
@@ -183,6 +191,14 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
   // customers from store is already server-filtered via debounced setFilters above
   const filteredCustomers = Array.isArray(customers) ? customers : [];
 
+  // Existing customer record chosen from the search or the conflict picker.
+  // Sent as customerRecordId so the order is attached to exactly that record.
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ConflictCandidate[] | null>(null);
+  const watchedPhone = form.watch('walkInCustomer.phone');
+  const watchedEmail = form.watch('walkInCustomer.email');
+  const { match: customerMatch, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
+
   const handleSelectExistingCustomer = (customerId: string) => {
     const customer = (Array.isArray(customers) ? customers : []).find(
       (c) => (c.id || c._id) === customerId || (c.customerId?._id || c.customerId) === customerId
@@ -190,6 +206,9 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     if (customer) {
       form.setValue('walkInCustomer.name',  customer.name  || '', { shouldValidate: true });
       form.setValue('walkInCustomer.phone', customer.phone || '', { shouldValidate: true });
+      form.setValue('walkInCustomer.email', customer.email || '', { shouldValidate: true });
+      setSelectedRecordId((customer as any).customerRecordId || (customer as any).customerId?._id || null);
+      setConflict(null);
       // Capture tier for live pricing preview (backend applies authoritative calculation)
       const tier = customer.customerId?.loyaltyTierId ?? customer.loyaltyTierId ?? null;
       setSelectedCustomerTier(tier && tier.active !== false ? tier : null);
@@ -227,7 +246,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
     }
   };
 
-  const onSubmit = async (data: CreateOrderForm) => {
+  const onSubmit = async (data: CreateOrderForm, recordIdOverride?: string) => {
     try {
       const resolveServiceType = (serviceId: string) =>
         activeServices.find((s) => s.id === serviceId)?.name || serviceId;
@@ -235,7 +254,8 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       const primaryServiceType = resolveServiceType(data.items[0].serviceId);
 
       const orderPayload: any = {
-        walkInCustomer:           data.walkInCustomer,
+        walkInCustomer:           { ...data.walkInCustomer, email: data.walkInCustomer.email || undefined },
+        customerRecordId:         recordIdOverride || selectedRecordId || undefined,
         serviceType:              primaryServiceType,
         serviceLevel:             selectedLevel?.name || data.serviceLevel || '',
         serviceLevelId:           data.serviceLevelId || undefined,
@@ -275,15 +295,24 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
         orderPayload.deliveryAddress = data.deliveryAddress;
       }
 
-      await createOrder(orderPayload);
-      toast.success('Order created successfully');
+      const created: any = await createOrder(orderPayload);
+      toast.success(customerOutcomeMessage(created?.customerRecord));
       form.reset();
+      setSelectedRecordId(null);
+      setConflict(null);
       setCustomerSearch('');
       setSelectedAddonIds([]);
       onOpenChange(false);
       onSuccess?.();
-    } catch {
-      toast.error('Failed to create order');
+    } catch (err: any) {
+      // Phone and email belong to two different customers: nothing was saved.
+      // Staff pick the right record, then the same form is resubmitted.
+      const candidates = getIdentityConflict(err);
+      if (candidates) {
+        setConflict(candidates);
+        return;
+      }
+      toast.error(err?.response?.data?.message || 'Failed to create order');
     }
   };
 
@@ -296,7 +325,7 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
       className="max-w-3xl"
     >
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <form onSubmit={form.handleSubmit((d) => onSubmit(d))} className="space-y-6">
 
           {/* ── Customer ──────────────────────────────────────────────── */}
           <div className="space-y-3">
@@ -359,13 +388,56 @@ export function CreateOrderModal({ open, onOpenChange, onSuccess }: CreateOrderM
                   <FormItem>
                     <FormLabel>Phone Number <span className="text-destructive">*</span></FormLabel>
                     <FormControl>
-                      <Input placeholder="08012345678" {...field} />
+                      <Input
+                        placeholder="08012345678"
+                        {...field}
+                        // Changing the contact details un-selects a chosen customer.
+                        onChange={(e) => { field.onChange(e); setSelectedRecordId(null); setConflict(null); }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              <FormField
+                control={form.control}
+                name="walkInCustomer.email"
+                render={({ field }) => (
+                  <FormItem className="sm:col-span-2">
+                    <FormLabel>Email <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                    <FormControl>
+                      <Input
+                        type="email"
+                        placeholder="customer@example.com"
+                        {...field}
+                        value={field.value ?? ''}
+                        onChange={(e) => { field.onChange(e); setSelectedRecordId(null); setConflict(null); }}
+                      />
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">Lets the customer activate an online account and see their orders.</p>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
+
+            {conflict ? (
+              <IdentityConflictPicker
+                candidates={conflict}
+                onCancel={() => setConflict(null)}
+                onPick={(id) => {
+                  setSelectedRecordId(id);
+                  setConflict(null);
+                  form.handleSubmit((d) => onSubmit(d, id))();
+                }}
+              />
+            ) : (
+              <CustomerMatchNotice
+                match={customerMatch}
+                checking={checkingMatch}
+                hasContact={!!(watchedPhone || watchedEmail)}
+              />
+            )}
           </div>
 
           <Separator />

@@ -8,6 +8,7 @@ import {
   getOrderStatusConfig,
   getPaymentStatusConfig,
   getActiveStatusConfig,
+  getPortalStatusConfig,
   getCustomerAccountStatusConfig,
   getSubscriptionStatusConfig,
   getPlanActiveConfig,
@@ -51,12 +52,18 @@ export function PaymentStatusBadge({ status }: { status: string }) {
 
 export function CustomerActiveBadge({ isActive }: { isActive?: boolean }) {
   const cfg = getActiveStatusConfig(isActive);
-  return <StatusPill className={cfg.className} label={cfg.label} />;
+  // Customers are deactivated, never deleted — say so rather than "Inactive".
+  return <StatusPill className={cfg.className} label={isActive === false ? 'Deactivated' : cfg.label} />;
 }
 
 // ============================================================================
 // CUSTOMER ACCOUNT STATUS  (customerId.status string field)
 // ============================================================================
+
+export function PortalStatusBadge({ status }: { status?: string }) {
+  const cfg = getPortalStatusConfig(status);
+  return <StatusPill className={cfg.className} label={cfg.label} />;
+}
 
 export function CustomerAccountStatusBadge({ status }: { status: string }) {
   const cfg = getCustomerAccountStatusConfig(status);

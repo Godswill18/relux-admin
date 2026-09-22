@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ModalForm } from '@/components/shared/ModalForm';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { PortalStatusBadge } from '@/components/shared/StatusBadges';
 import { useCustomerStore } from '@/stores/useCustomerStore';
 import { format } from 'date-fns';
 import { Loader2, User, Phone, Mail, MapPin, Award, Wallet, Calendar } from 'lucide-react';
@@ -58,7 +59,6 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
 
   const tier = customerDoc?.loyaltyTierId;
   const loyaltyPoints = customerDoc?.loyaltyPointsBalance ?? 0;
-  const status = customerDoc?.status;
 
   return (
     <ModalForm
@@ -92,29 +92,65 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
           <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
             Account
           </p>
+          {/* One status, from the field that actually controls access
+              (User.isActive). This used to show Customer.status and an
+              "Active: Yes/No" side by side, which could disagree. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-xs text-muted-foreground">Account Status</p>
-              {status ? (
-                <Badge
-                  variant={
-                    status === 'active' ? 'default' : status === 'suspended' ? 'destructive' : 'secondary'
-                  }
-                  className="mt-1 capitalize"
-                >
-                  {status}
-                </Badge>
-              ) : (
-                <p className="text-sm font-medium">—</p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Active</p>
-              <Badge variant={customer.isActive !== false ? 'default' : 'secondary'} className="mt-1">
-                {customer.isActive !== false ? 'Yes' : 'No'}
+              <p className="text-xs text-muted-foreground">Customer Status</p>
+              <Badge
+                variant={customer.isActive === false ? 'destructive' : 'default'}
+                className="mt-1"
+              >
+                {customer.isActive === false ? 'Deactivated' : 'Active'}
               </Badge>
             </div>
+            <div>
+              {/* Online access — separate from being a customer. */}
+              <p className="text-xs text-muted-foreground">Portal Account</p>
+              <div className="mt-1"><PortalStatusBadge status={customer.portalStatus} /></div>
+            </div>
           </div>
+          {customer.portalStatus === 'UNREGISTERED' && (
+            <p className="text-xs text-muted-foreground">
+              {customer.email
+                ? 'This customer can activate an online account from the sign-up page using this email.'
+                : 'No email on file — add one so this customer can activate an online account.'}
+            </p>
+          )}
+          {customer.needsReview && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Flagged for review{customer.reviewReason ? `: ${customer.reviewReason}` : ''}.
+            </p>
+          )}
+
+          {customer.isActive === false && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 space-y-1.5 text-sm">
+              <p>
+                <span className="text-muted-foreground">Deactivated: </span>
+                {customer.deactivatedAt ? format(new Date(customer.deactivatedAt), 'PPP p') : '—'}
+              </p>
+              <p>
+                <span className="text-muted-foreground">By: </span>
+                {customer.deactivatedBy?.name || '—'}
+              </p>
+              <p className="break-words">
+                <span className="text-muted-foreground">Reason: </span>
+                {customer.deactivationReason || 'No reason given'}
+              </p>
+              <p className="text-xs text-muted-foreground pt-1">
+                Orders, payments, wallet and loyalty history are unchanged.
+              </p>
+            </div>
+          )}
+
+          {customer.isActive !== false && customer.reactivatedAt && (
+            <p className="text-xs text-muted-foreground">
+              Reactivated {format(new Date(customer.reactivatedAt), 'PPP p')}
+              {customer.reactivatedBy?.name ? ` by ${customer.reactivatedBy.name}` : ''}
+            </p>
+          )}
+
           <InfoRow
             icon={Calendar}
             label="Joined"

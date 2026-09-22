@@ -6,9 +6,11 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import apiClient from '@/lib/api/client';
 import { ColumnDef } from '@tanstack/react-table';
 import {
-  Plus, MoreHorizontal, Eye, Edit, Trash, Wallet, Award,
+  Plus, MoreHorizontal, Eye, Edit, UserX, UserCheck, Wallet, Award,
   Search, Phone, Users, ArrowUpDown,
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { AddCustomerModal } from './AddCustomerModal';
 import { ViewCustomerModal } from './ViewCustomerModal';
 import { EditCustomerModal } from './EditCustomerModal';
@@ -19,7 +21,7 @@ import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { CustomerActiveBadge, CustomerAccountStatusBadge } from '@/components/shared/StatusBadges';
+import { CustomerActiveBadge, PortalStatusBadge } from '@/components/shared/StatusBadges';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,10 +46,12 @@ import { format } from 'date-fns';
 // ============================================================================
 
 export default function CustomersPage() {
-  const { customers, isLoading, isFetchingMore, hasMore, fetchCustomers, loadMoreCustomers, deleteCustomer, setFilters } = useCustomerStore();
+  const { customers, isLoading, isFetchingMore, hasMore, fetchCustomers, loadMoreCustomers, deactivateCustomer, reactivateCustomer, setFilters, filters } = useCustomerStore();
   const canCreate = useHasPermission(Permission.CREATE_CUSTOMER);
   const canEdit = useHasPermission(Permission.EDIT_CUSTOMER);
-  const canDelete = useHasPermission(Permission.DELETE_CUSTOMER);
+  // Same permission that gated Delete, so replacing the action does not widen
+  // who can cut a customer off. The backend enforces it independently.
+  const canChangeStatus = useHasPermission(Permission.DELETE_CUSTOMER);
   const canManageWallet = useHasPermission(Permission.MANAGE_WALLET);
   const canManageLoyalty = useHasPermission(Permission.MANAGE_LOYALTY);
 
@@ -56,8 +60,11 @@ export default function CustomersPage() {
   const [editTarget, setEditTarget] = useState<any>(null);
   const [walletTarget, setWalletTarget] = useState<any>(null);
   const [loyaltyTarget, setLoyaltyTarget] = useState<any>(null);
-  const [deleteTarget, setDeleteTarget] = useState<any>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  // Account-status change awaiting confirmation. Nothing is sent on the first
+  // click — the dialog must be confirmed.
+  const [statusTarget, setStatusTarget] = useState<{ customer: any; action: 'deactivate' | 'reactivate' } | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState('');
+  const [isChangingStatus, setIsChangingStatus] = useState(false);
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('name_asc');
 
@@ -71,10 +78,14 @@ export default function CustomersPage() {
 
   // Reset store search filter on unmount to avoid polluting shared state
   useEffect(() => {
-    return () => { setFilters({ search: undefined }); };
+    return () => { setFilters({ search: undefined, status: 'all', portal: 'all' }); };
   }, [setFilters]);
 
-  interface CustomerStats { total: number; active: number; newThisMonth: number; inactive: number; }
+  interface CustomerStats {
+    total: number; active: number; newThisMonth: number; inactive: number;
+    portalActive?: number; unregistered?: number; pendingVerification?: number;
+    activationRate?: number;
+  }
   const [serverStats, setServerStats] = useState<CustomerStats | null>(null);
   const hasFetchedStats = useRef(false);
 
@@ -88,17 +99,34 @@ export default function CustomersPage() {
     }
   }, [fetchCustomers]);
 
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
+  const openStatusChange = (customer: any) => {
+    setDeactivationReason('');
+    setStatusTarget({ customer, action: customer.isActive === false ? 'reactivate' : 'deactivate' });
+  };
+
+  const handleConfirmStatusChange = async () => {
+    if (!statusTarget) return;
+    const { customer, action } = statusTarget;
+    // Status changes act on the portal account. Rows now include customers
+    // without one (walk-ins), so the account id is explicit rather than _id.
+    const id = customer.userId;
+    if (!id) return;
     try {
-      setIsDeleting(true);
-      await deleteCustomer(deleteTarget._id || deleteTarget.id);
-      toast.success('Customer deleted successfully');
-      setDeleteTarget(null);
-    } catch {
-      toast.error('Failed to delete customer');
+      setIsChangingStatus(true);
+      if (action === 'deactivate') {
+        await deactivateCustomer(id, deactivationReason.trim() || undefined);
+        toast.success(`${customer.name}'s account has been deactivated`);
+      } else {
+        await reactivateCustomer(id);
+        toast.success(`${customer.name}'s account has been reactivated`);
+      }
+      setStatusTarget(null);
+    } catch (err: any) {
+      // Server messages here are written for admins ("already deactivated",
+      // "not found") and carry no internals, so they are shown as-is.
+      toast.error(err?.response?.data?.message || `Could not ${action} this account. Please try again.`);
     } finally {
-      setIsDeleting(false);
+      setIsChangingStatus(false);
     }
   };
 
@@ -145,6 +173,9 @@ export default function CustomersPage() {
     active:       serverStats?.active       ?? customerList.filter((c) => c.isActive !== false).length,
     newThisMonth: serverStats?.newThisMonth ?? customerList.filter((c) => { const d = new Date(c.createdAt); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); }).length,
     inactive:     serverStats?.inactive     ?? customerList.filter((c) => c.isActive === false).length,
+    portalActive: serverStats?.portalActive ?? customerList.filter((c) => c.portalStatus === 'ACTIVE').length,
+    unregistered: serverStats?.unregistered ?? customerList.filter((c) => c.portalStatus === 'UNREGISTERED').length,
+    activationRate: serverStats?.activationRate ?? null,
   };
 
   // Desktop table columns
@@ -191,13 +222,11 @@ export default function CustomersPage() {
       },
     },
     {
-      id: 'customerStatus',
-      header: 'Account Status',
-      cell: ({ row }) => {
-        const status = row.original.customerId?.status;
-        if (!status) return <span className="text-sm text-muted-foreground">—</span>;
-        return <CustomerAccountStatusBadge status={status} />;
-      },
+      // Online access, separate from being a customer. A walk-in who has never
+      // registered is a valid customer shown as "Not Activated".
+      id: 'portalStatus',
+      header: 'Portal Account',
+      cell: ({ row }) => <PortalStatusBadge status={row.original.portalStatus} />,
     },
     {
       accessorKey: 'createdAt',
@@ -247,16 +276,23 @@ export default function CustomersPage() {
                   Adjust Loyalty
                 </DropdownMenuItem>
               )}
-              {canDelete && (
+              {canChangeStatus && customer.hasPortalAccount && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setDeleteTarget(customer)}
-                    className="text-destructive"
-                  >
-                    <Trash className="mr-2 h-4 w-4" />
-                    Delete
-                  </DropdownMenuItem>
+                  {customer.isActive === false ? (
+                    <DropdownMenuItem onClick={() => openStatusChange(customer)}>
+                      <UserCheck className="mr-2 h-4 w-4" />
+                      Reactivate Customer
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={() => openStatusChange(customer)}
+                      className="text-destructive"
+                    >
+                      <UserX className="mr-2 h-4 w-4" />
+                      Deactivate Customer
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
             </DropdownMenuContent>
@@ -305,66 +341,124 @@ export default function CustomersPage() {
         customer={loyaltyTarget}
       />
       <ConfirmDialog
-        open={!!deleteTarget}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete Customer"
+        open={!!statusTarget}
+        onOpenChange={(open) => !open && !isChangingStatus && setStatusTarget(null)}
+        title={statusTarget?.action === 'reactivate' ? 'Reactivate Customer Account?' : 'Deactivate Customer Account?'}
         description={
-          <>
-            Are you sure you want to permanently delete{' '}
-            <strong>{deleteTarget?.name}</strong>? This action cannot be undone.
-          </>
+          statusTarget?.action === 'reactivate' ? (
+            <p>
+              <strong>{statusTarget?.customer?.name}</strong> will be able to sign in and use
+              their existing account again, with all of their history, wallet balance and
+              points exactly as they were.
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <p>
+                This will prevent <strong>{statusTarget?.customer?.name}</strong> from accessing
+                their account, and will sign them out of any open session. Their previous orders,
+                payments, transactions, invoices, wallet balance, loyalty points and account
+                history will remain available. You can reactivate the account at any time.
+              </p>
+              <div className="space-y-1.5 text-left">
+                <Label htmlFor="deactivation-reason" className="text-foreground">
+                  Reason for deactivation <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Textarea
+                  id="deactivation-reason"
+                  value={deactivationReason}
+                  onChange={(e) => setDeactivationReason(e.target.value)}
+                  maxLength={500}
+                  rows={3}
+                  placeholder="e.g. Requested by customer"
+                />
+              </div>
+            </div>
+          )
         }
-        confirmLabel="Delete"
-        destructive
-        isLoading={isDeleting}
-        onConfirm={handleConfirmDelete}
+        confirmLabel={statusTarget?.action === 'reactivate' ? 'Reactivate Account' : 'Deactivate Account'}
+        destructive={statusTarget?.action !== 'reactivate'}
+        isLoading={isChangingStatus}
+        onConfirm={handleConfirmStatusChange}
       />
 
       {/* ── Stats Cards ─────────────────────────────────────────────────────── */}
+      {/* Unique customer records — walk-in customers included, not portal logins. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
             <CardTitle className="text-xs sm:text-sm font-medium">Total Customers</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-2xl font-bold tabular-nums">{stats.total}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">{stats.newThisMonth} new this month</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Active</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Portal Active</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.active}</div>
+            <div className="text-2xl font-bold tabular-nums">{stats.portalActive}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">{stats.activationRate != null ? `${stats.activationRate}% activation rate` : 'Using the customer app'}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">New This Month</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Not Activated</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.newThisMonth}</div>
+            <div className="text-2xl font-bold tabular-nums">{stats.unregistered}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Customers without an online account</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-            <CardTitle className="text-xs sm:text-sm font-medium">Inactive</CardTitle>
+            <CardTitle className="text-xs sm:text-sm font-medium">Deactivated</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="text-2xl font-bold">{stats.inactive}</div>
+            <div className="text-2xl font-bold tabular-nums">{stats.inactive}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">Access removed by an admin</p>
           </CardContent>
         </Card>
       </div>
 
       {/* ── Search (shared between mobile + desktop) ─────────────────────────── */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="Search by name, email, or phone…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, email, or phone…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        {/* Filtering happens server-side, so pagination stays correct.
+            "Deactivated" is the business's decision (customer status); the
+            others describe portal access. */}
+        <Select
+          value={
+            filters?.status === 'deactivated' ? 'deactivated'
+              : (filters?.portal && filters.portal !== 'all') ? `portal:${filters.portal}`
+              : 'all'
+          }
+          onValueChange={(v) => {
+            if (v === 'deactivated') setFilters({ status: 'deactivated', portal: 'all' });
+            else if (v.startsWith('portal:')) setFilters({ status: 'all', portal: v.slice(7) as any });
+            else setFilters({ status: 'all', portal: 'all' });
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-52" aria-label="Filter customers">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Customers</SelectItem>
+            <SelectItem value="portal:active">Portal Active</SelectItem>
+            <SelectItem value="portal:unregistered">Not Registered</SelectItem>
+            <SelectItem value="portal:pending">Pending Verification</SelectItem>
+            <SelectItem value="deactivated">Deactivated</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* ── Mobile Sort (hidden on md+) ─────────────────────────────────────── */}
@@ -411,14 +505,14 @@ export default function CustomersPage() {
               key={customer._id}
               customer={customer}
               canEdit={canEdit}
-              canDelete={canDelete}
+              canChangeStatus={canChangeStatus}
               canManageWallet={canManageWallet}
               canManageLoyalty={canManageLoyalty}
               onView={() => setViewTarget(customer)}
               onEdit={() => setEditTarget(customer)}
               onWallet={() => setWalletTarget(customer)}
               onLoyalty={() => setLoyaltyTarget(customer)}
-              onDelete={() => setDeleteTarget(customer)}
+              onStatusChange={() => openStatusChange(customer)}
             />
           ))
         )}
@@ -463,31 +557,30 @@ export default function CustomersPage() {
 interface MobileCustomerCardProps {
   customer: any;
   canEdit: boolean;
-  canDelete: boolean;
+  canChangeStatus: boolean;
   canManageWallet: boolean;
   canManageLoyalty: boolean;
   onView: () => void;
   onEdit: () => void;
   onWallet: () => void;
   onLoyalty: () => void;
-  onDelete: () => void;
+  onStatusChange: () => void;
 }
 
 function MobileCustomerCard({
   customer,
   canEdit,
-  canDelete,
+  canChangeStatus,
   canManageWallet,
   canManageLoyalty,
   onView,
   onEdit,
   onWallet,
   onLoyalty,
-  onDelete,
+  onStatusChange,
 }: MobileCustomerCardProps) {
   const tier = customer.customerId?.loyaltyTierId;
   const points = customer.customerId?.loyaltyPointsBalance ?? 0;
-  const accountStatus = customer.customerId?.status;
   const joinedAt = customer.createdAt
     ? format(new Date(customer.createdAt), 'MMM dd, yyyy')
     : '—';
@@ -535,15 +628,21 @@ function MobileCustomerCard({
                   <Award className="mr-2 h-4 w-4" />Adjust Loyalty
                 </DropdownMenuItem>
               )}
-              {canDelete && (
+              {canChangeStatus && customer.hasPortalAccount && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                  >
-                    <Trash className="mr-2 h-4 w-4" />Delete
-                  </DropdownMenuItem>
+                  {customer.isActive === false ? (
+                    <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onStatusChange(); }}>
+                      <UserCheck className="mr-2 h-4 w-4" />Reactivate Customer
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={(e) => { e.stopPropagation(); onStatusChange(); }}
+                    >
+                      <UserX className="mr-2 h-4 w-4" />Deactivate Customer
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
             </DropdownMenuContent>
@@ -570,7 +669,7 @@ function MobileCustomerCard({
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <CustomerActiveBadge isActive={customer.isActive} />
-            {accountStatus && <CustomerAccountStatusBadge status={accountStatus} />}
+            <PortalStatusBadge status={customer.portalStatus} />
           </div>
           <span className="text-xs text-muted-foreground">{joinedAt}</span>
         </div>

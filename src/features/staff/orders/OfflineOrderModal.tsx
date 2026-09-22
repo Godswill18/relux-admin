@@ -35,6 +35,10 @@ import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
 import { Loader2, Plus, Trash2, Tag } from 'lucide-react';
 import apiClient from '@/lib/api/client';
+import {
+  useWalkInCustomerMatch, CustomerMatchNotice, IdentityConflictPicker,
+  getIdentityConflict, customerOutcomeMessage, type ConflictCandidate,
+} from '@/components/shared/WalkInCustomerMatch';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -63,6 +67,9 @@ const itemSchema = z.object({
 const offlineOrderSchema = z.object({
   customerName:        z.string().min(2, 'Name must be at least 2 characters'),
   customerPhone:       z.string().min(10, 'Enter a valid phone number'),
+  // Optional — lets the customer activate an online account later (email is
+  // the only verification channel; there is no SMS).
+  customerEmail:       z.string().trim().email('Enter a valid email').optional().or(z.literal('')),
   items:               z.array(itemSchema).min(1, 'Add at least one item'),
   paymentMethod:       z.enum(['cash', 'pos', 'transfer']),
   specialInstructions: z.string().optional(),
@@ -106,6 +113,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
     defaultValues: {
       customerName:        '',
       customerPhone:       '',
+      customerEmail:       '',
       items:               [{ itemType: '', serviceType: 'wash-fold', quantity: 1, unitPrice: 0 }],
       paymentMethod:       'cash',
       specialInstructions: '',
@@ -134,7 +142,13 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
 
   const isSubmitting = form.formState.isSubmitting;
 
-  const onSubmit = async (data: OfflineOrderForm) => {
+  // Existing-customer detection and phone/email conflict resolution
+  const [conflict, setConflict] = useState<ConflictCandidate[] | null>(null);
+  const watchedPhone = form.watch('customerPhone');
+  const watchedEmail = form.watch('customerEmail');
+  const { match: customerMatch, checking: checkingMatch } = useWalkInCustomerMatch(watchedPhone, watchedEmail);
+
+  const onSubmit = async (data: OfflineOrderForm, customerRecordId?: string) => {
     try {
       const orderItems = data.items.map((item) => ({
         itemType:    item.itemType,
@@ -149,12 +163,14 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
       // (backend also stores it on each item now, but the field is still present on the order)
       const primaryService = data.items[0].serviceType;
 
-      await apiClient.post('/orders', {
+      const res = await apiClient.post('/orders', {
         orderType:    'walk-in',
         walkInCustomer: {
           name:  data.customerName,
           phone: data.customerPhone,
+          email: data.customerEmail || undefined,
         },
+        customerRecordId,
         serviceType:              primaryService,
         serviceLevel:             selectedLevel?.name || '',
         serviceLevelId:           serviceLevelId || undefined,
@@ -176,17 +192,22 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
         },
       });
 
-      toast.success('Walk-in order created successfully');
+      toast.success(customerOutcomeMessage(res.data?.data?.customerRecord));
+      setConflict(null);
       form.reset();
       onOpenChange(false);
       onSuccess();
     } catch (err: any) {
+      // Phone and email belong to two different customers — nothing saved yet.
+      const candidates = getIdentityConflict(err);
+      if (candidates) { setConflict(candidates); return; }
       toast.error(err?.response?.data?.message || 'Failed to create order');
     }
   };
 
   const handleClose = () => {
     if (isSubmitting) return;
+    setConflict(null);
     form.reset();
     onOpenChange(false);
   };
@@ -202,7 +223,7 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          <form onSubmit={form.handleSubmit((d) => onSubmit(d))} className="space-y-5">
 
             {/* ── Customer ─────────────────────────────────────────────── */}
             <div className="space-y-3">
@@ -230,13 +251,49 @@ export function OfflineOrderModal({ open, onOpenChange, onSuccess }: OfflineOrde
                     <FormItem>
                       <FormLabel>Phone *</FormLabel>
                       <FormControl>
-                        <Input placeholder="08012345678" {...field} />
+                        <Input
+                          placeholder="08012345678"
+                          {...field}
+                          onChange={(e) => { field.onChange(e); setConflict(null); }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerEmail"
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Email <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                      <FormControl>
+                        <Input
+                          type="email"
+                          placeholder="customer@example.com"
+                          {...field}
+                          value={field.value ?? ''}
+                          onChange={(e) => { field.onChange(e); setConflict(null); }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
+              {conflict ? (
+                <IdentityConflictPicker
+                  candidates={conflict}
+                  onCancel={() => setConflict(null)}
+                  onPick={(id) => { setConflict(null); form.handleSubmit((d) => onSubmit(d, id))(); }}
+                />
+              ) : (
+                <CustomerMatchNotice
+                  match={customerMatch}
+                  checking={checkingMatch}
+                  hasContact={!!(watchedPhone || watchedEmail)}
+                />
+              )}
             </div>
 
             <Separator />
