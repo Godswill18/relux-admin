@@ -31,6 +31,18 @@ interface OrderStats {
   ordersByService: { _id: string; count: number }[];
   ordersByType: { _id: string; count: number }[];
   paymentMethods: { _id: string; count: number }[];
+  /** Garments = sum of line quantities, across orders that weren't cancelled */
+  garments?: {
+    total: number;
+    processing: number;
+    readyAwaitingCollection: number;
+    collected: number;
+    outstanding: number;
+    partiallyReadyOrders: number;
+    partiallyCollectedOrders: number;
+  };
+  /** One order can hold several services — garments and line revenue per service */
+  garmentsByService?: { _id: string; garments: number; lines: number; amount: number }[];
 }
 
 interface PayrollStats {

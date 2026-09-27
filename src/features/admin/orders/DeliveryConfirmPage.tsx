@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, XCircle, Loader2, Package,
-  User, Phone, Mail, Clock, ShieldCheck, CreditCard, AlertTriangle,
+  User, Phone, Mail, Clock, ShieldCheck, CreditCard, AlertTriangle, PackageCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +19,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { OrderStatusBadge, PaymentStatusBadge } from '@/components/shared/StatusBadges';
+import { CollectDialog } from '@/components/orders/OrderGarmentsPanel';
+import { fulfilmentOf } from '@/lib/orderLines';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useOrderStore } from '@/stores/useOrderStore';
 import { toast } from 'sonner';
@@ -62,38 +64,42 @@ export default function DeliveryConfirmPage() {
   const [paymentStatus, setPaymentStatus] = useState('');
   const [updatingPayment, setUpdatingPayment] = useState(false);
 
-  // ── Step 1: look up order by QR ──────────────────────────────────────────
-  useEffect(() => {
+  // ── Collect items dialog (partial pickup via scan) ───────────────────────
+  const [collectOpen, setCollectOpen] = useState(false);
+
+  // ── Step 1: look up order by QR — also used to refresh in place after a
+  // partial collection, so staff see updated garment counts without rescanning
+  const lookupOrder = async (quiet = false) => {
     if (!qrCode) {
       setLookupError('No QR code provided. Please scan again.');
       setLookupLoading(false);
       return;
     }
-
-    const lookup = async () => {
-      try {
-        setLookupLoading(true);
-        const res = await apiClient.post('/orders/lookup-by-qr', { qrCode });
-        if (res.data.success) {
-          const fetched = res.data.data.order;
-          setOrder(fetched);
-          setPaymentStatus(fetched.paymentStatus || fetched.payment?.status || 'unpaid');
-        } else {
-          setLookupError(res.data.message || 'Order not found');
-        }
-      } catch (err: any) {
-        const msg =
-          err.response?.data?.error?.message ||
-          err.response?.data?.message ||
-          err.message ||
-          'Invalid or unrecognized QR code';
-        setLookupError(msg);
-      } finally {
-        setLookupLoading(false);
+    try {
+      if (!quiet) setLookupLoading(true);
+      const res = await apiClient.post('/orders/lookup-by-qr', { qrCode });
+      if (res.data.success) {
+        const fetched = res.data.data.order;
+        setOrder(fetched);
+        setPaymentStatus(fetched.paymentStatus || fetched.payment?.status || 'unpaid');
+      } else {
+        setLookupError(res.data.message || 'Order not found');
       }
-    };
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Invalid or unrecognized QR code';
+      if (!quiet) setLookupError(msg);
+    } finally {
+      if (!quiet) setLookupLoading(false);
+    }
+  };
 
-    lookup();
+  useEffect(() => {
+    lookupOrder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qrCode]);
 
   // ── Update payment status ─────────────────────────────────────────────────
@@ -153,6 +159,11 @@ export default function DeliveryConfirmPage() {
   const pricing = order?.pricing ?? {};
   const isCancelled = order?.status === 'cancelled';
   const alreadyDelivered = ['delivered', 'completed'].includes(order?.status ?? '');
+  // Garments tracked and something is ready but not yet handed over — offer a
+  // per-line pick instead of forcing "the whole order left" on every scan.
+  const fulfilment = order ? fulfilmentOf(order) : null;
+  const canPartialCollect = !!order?.itemTracking && !isCancelled && !alreadyDelivered
+    && (fulfilment?.awaitingCollection ?? 0) > 0;
 
   // Current payment status on the order object (kept in sync after update)
   const currentPaymentStatus = order?.paymentStatus || order?.payment?.status || 'unpaid';
@@ -407,12 +418,41 @@ export default function DeliveryConfirmPage() {
             </Card>
           )}
 
-          {/* Confirm button — blocked when not paid */}
-          {!isCancelled && !alreadyDelivered && (
+          {/* Partial pickup — release only the garments that are ready.
+              Not payment-gated, same as the counter's Collect dialog: payment
+              and garment hand-over are separate concepts. */}
+          {canPartialCollect && (
             <div className="space-y-2">
               <Button
                 className="w-full"
                 size="lg"
+                variant="secondary"
+                onClick={() => setCollectOpen(true)}
+                disabled={!isAuthenticated}
+              >
+                <PackageCheck className="mr-2 h-5 w-5" />
+                Collect Ready Items ({fulfilment?.awaitingCollection})
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">
+                {fulfilment?.processingGarments
+                  ? `${fulfilment.processingGarments} garment(s) are still being processed.`
+                  : 'Choose how many of each item to release now.'}
+              </p>
+            </div>
+          )}
+
+          {/* Confirm button — releases everything outstanding; blocked when not paid */}
+          {!isCancelled && !alreadyDelivered && (
+            <div className="space-y-2">
+              {canPartialCollect && (
+                <p className="text-xs text-center text-muted-foreground pt-1">
+                  Or mark the entire order delivered instead:
+                </p>
+              )}
+              <Button
+                className="w-full"
+                size={canPartialCollect ? 'default' : 'lg'}
+                variant={canPartialCollect ? 'outline' : 'default'}
                 onClick={handleConfirm}
                 disabled={confirming || !isAuthenticated || !isPaid}
               >
@@ -448,6 +488,15 @@ export default function DeliveryConfirmPage() {
             </Button>
           )}
         </div>
+      )}
+
+      {order && (
+        <CollectDialog
+          order={order}
+          open={collectOpen}
+          onOpenChange={setCollectOpen}
+          onDone={() => { lookupOrder(true); fetchOrders(); }}
+        />
       )}
     </div>
   );

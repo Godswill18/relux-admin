@@ -27,6 +27,11 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
+import { GarmentProgressBadge } from '@/components/orders/OrderGarmentsPanel';
+import {
+  GarmentIndicators, GARMENT_FILTER_LABELS, splitCounts, type GarmentFilter, type GarmentStats,
+} from '@/components/orders/GarmentIndicators';
+import { garmentCount, lineServiceLabel } from '@/lib/orderLines';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -106,6 +111,8 @@ export default function OrdersPage() {
   const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
+  const [garmentStats, setGarmentStats] = useState<GarmentStats | null>(null);
+  const [garmentFilter, setGarmentFilter] = useState<GarmentFilter>('');
   const [isLoading,    setIsLoading]    = useState(false);
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [listKey,      setListKey]      = useState(0);
@@ -127,8 +134,13 @@ export default function OrdersPage() {
 
   // ── Fetch DB counts per status ───────────────────────────────────────────
   const fetchCounts = useCallback(() => {
-    apiClient.get('/orders/counts')
-      .then((res) => { if (res.data?.data) setCounts(res.data.data); })
+    apiClient.get('/orders/counts', { params: { include: 'fulfilment' } })
+      .then((res) => {
+        if (!res.data?.data) return;
+        const { counts: byStatus, garments } = splitCounts(res.data.data);
+        setCounts(byStatus);
+        setGarmentStats(garments);
+      })
       .catch(() => {});
   }, []);
 
@@ -214,11 +226,14 @@ export default function OrdersPage() {
   useEffect(() => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     const q = search.trim();
-    if (!q) { setSearchResults([]); return; }
+    if (!q && !garmentFilter) { setSearchResults([]); return; }
     searchDebounce.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await apiClient.get('/orders', { params: { search: q, limit: '50' } });
+        const params: Record<string, string> = { limit: garmentFilter ? '100' : '50' };
+        if (q) params.search = q;
+        if (garmentFilter) params.fulfilment = garmentFilter;
+        const res = await apiClient.get('/orders', { params });
         const raw = res.data?.data;
         setSearchResults(Array.isArray(raw) ? raw : raw?.orders ?? []);
       } catch {
@@ -228,7 +243,7 @@ export default function OrdersPage() {
       }
     }, 300);
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
-  }, [search]);
+  }, [search, garmentFilter, listKey]);
 
   const filteredOrders = useMemo(() => orders, [orders]);
 
@@ -321,12 +336,15 @@ export default function OrdersPage() {
       header: 'Items',
       cell: ({ row }) => {
         const items = row.original.items || [];
+        const garments = garmentCount(items);
         return (
-          <div className="text-sm">
-            <div>{items[0]?.itemType || items[0]?.serviceName || '—'}</div>
-            {items.length > 1 && (
-              <div className="text-xs text-muted-foreground">+{items.length - 1} more</div>
-            )}
+          <div className="text-sm space-y-0.5">
+            <div>
+              {items[0]?.itemType || items[0]?.serviceName || '—'}
+              {items.length > 1 && <span className="text-xs text-muted-foreground"> +{items.length - 1} more</span>}
+            </div>
+            {garments > 0 && <div className="text-xs text-muted-foreground">{garments} garment{garments === 1 ? '' : 's'}</div>}
+            <GarmentProgressBadge order={row.original} />
           </div>
         );
       },
@@ -511,6 +529,8 @@ export default function OrdersPage() {
         ))}
       </div>
 
+      <GarmentIndicators stats={garmentStats} active={garmentFilter} onSelect={setGarmentFilter} />
+
       {/* ── Global Search ───────────────────────────────────────────────── */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -524,12 +544,20 @@ export default function OrdersPage() {
       </div>
 
       {/* ── Search Results (cross-tab) ───────────────────────────────────── */}
-      {search.trim() && (
+      {(search.trim() || garmentFilter) && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Search className="h-4 w-4" />
-              {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} for "${search.trim()}"`}
+              <span className="flex-1">
+                {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''}${
+                  search.trim() ? ` for "${search.trim()}"` : ''}${garmentFilter ? ` — ${GARMENT_FILTER_LABELS[garmentFilter]}` : ''}`}
+              </span>
+              {garmentFilter && (
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setGarmentFilter('')}>
+                  Clear filter
+                </Button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -550,6 +578,7 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono font-semibold text-sm">{order.orderNumber || '—'}</span>
                         <OrderStatusBadge status={order.status} />
+                        <GarmentProgressBadge order={order} />
                         <PriorityBadge serviceLevel={order.serviceLevel} rush={order.rush} priorityLevel={order.serviceLevelId?.priorityLevel} />
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -784,6 +813,7 @@ function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, o
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <OrderStatusBadge status={order.status} />
+                        <GarmentProgressBadge order={order} />
             <PaymentStatusBadge status={payStatus} />
           </div>
           <div className="text-right">

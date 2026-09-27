@@ -1,14 +1,22 @@
 // ============================================================================
 // ADD-ONS TAB — Full CRUD: create, edit, toggle active, delete
-// Each add-on has a name, type (fixed ₦ or percentage %), value, and status.
+// Each add-on has a name, type (fixed ₦ or percentage %), value, and status,
+// and is charged either once per order or per garment on an order line (e.g.
+// starch on 2 of 5 shirts). Per-garment add-ons can be limited to services.
+//
+// A fixed, per-garment add-on may also carry price overrides by garment (and
+// optionally by garment+service) — e.g. Stain Removal is ₦500 on a Shirt but
+// ₦1,000 on a Bedsheet — set below the flat value. Percentage add-ons already
+// scale with the garment through the line's own price, so this only applies
+// to a fixed amount.
 // ============================================================================
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
-  Plus, Pencil, Trash2, Loader2, Tag, DollarSign, Percent,
+  Plus, Pencil, Trash2, Loader2, Tag, DollarSign, Percent, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,11 +34,18 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useServiceStore } from '@/stores/useServiceStore';
 import { toast } from 'sonner';
 
 // ── Schema ────────────────────────────────────────────────────────────────────
+
+const garmentPriceRowSchema = z.object({
+  garmentName: z.string().min(1, 'Choose a garment'),
+  serviceId:   z.string().optional(),
+  price:       z.coerce.number({ invalid_type_error: 'Must be a number' }).min(0, 'Must be 0 or positive'),
+});
 
 const addonSchema = z.object({
   name:         z.string().min(1, 'Name is required').max(60, 'Max 60 characters'),
@@ -38,22 +53,41 @@ const addonSchema = z.object({
   value:        z.coerce.number({ invalid_type_error: 'Must be a number' }).min(0, 'Must be 0 or positive'),
   description:  z.string().max(200).optional(),
   displayOrder: z.coerce.number().min(0).optional(),
+  scope:        z.enum(['order', 'item']),
+  eligibleServiceIds: z.array(z.string()),
+  garmentPricing: z.array(garmentPriceRowSchema).default([]),
 }).refine(
   (d) => !(d.type === 'percentage' && d.value > 100),
   { message: 'Percentage cannot exceed 100', path: ['value'] }
+).refine(
+  (d) => {
+    const seen = new Set<string>();
+    for (const r of d.garmentPricing) {
+      const key = `${r.garmentName.trim().toLowerCase()}::${r.serviceId || ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+    }
+    return true;
+  },
+  { message: 'The same garment (and service) is listed twice', path: ['garmentPricing'] }
 );
 type AddonForm = z.infer<typeof addonSchema>;
 
 // ── Form Dialog ───────────────────────────────────────────────────────────────
 
+const idOf = (v: any) => String(v?._id ?? v?.id ?? v ?? '');
+
 function AddonFormDialog({
-  open, onOpenChange, initial, onSave, title,
+  open, onOpenChange, initial, onSave, title, services, garmentNames,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   initial?: any;
   onSave: (values: AddonForm) => Promise<void>;
   title: string;
+  services: any[];
+  /** Distinct garment names from the price list, for the per-garment override picker */
+  garmentNames: string[];
 }) {
   const form = useForm<AddonForm>({
     resolver: zodResolver(addonSchema),
@@ -63,14 +97,40 @@ function AddonFormDialog({
       value:        initial?.value        ?? 0,
       description:  initial?.description  ?? '',
       displayOrder: initial?.displayOrder ?? 0,
+      // Add-ons saved before scope existed are order-level
+      scope:        initial?.scope === 'item' ? 'item' : (initial ? 'order' : 'item'),
+      eligibleServiceIds: (initial?.eligibleServiceIds || []).map(idOf),
+      garmentPricing: (initial?.garmentPricing || []).map((r: any) => ({
+        garmentName: r.garmentName || '', serviceId: r.serviceId ? idOf(r.serviceId) : undefined, price: r.price ?? 0,
+      })),
     },
   });
 
   const watchType = form.watch('type');
+  const watchScope = form.watch('scope');
+  const watchEligible = form.watch('eligibleServiceIds');
   const isSubmitting = form.formState.isSubmitting;
+  const { fields: priceRows, append: addPriceRow, remove: removePriceRow } = useFieldArray({
+    control: form.control, name: 'garmentPricing',
+  });
+  // A price row's service dropdown is narrowed to whatever the add-on itself
+  // is eligible for, when that's been restricted.
+  const rowServiceOptions = watchEligible.length
+    ? services.filter((s) => watchEligible.includes(idOf(s)))
+    : services;
+  const showGarmentPricing = watchType === 'fixed' && watchScope === 'item';
 
   const handleSubmit = async (values: AddonForm) => {
-    await onSave(values);
+    // The pricing-overrides section only shows for a fixed, per-garment
+    // add-on. If it's hidden but rows are still sitting in this form's state
+    // (the admin switched type/scope away from fixed+item in this session),
+    // clear them explicitly — sending them would fail the server's own check.
+    // If it's hidden and there was nothing to clear, omit the key entirely so
+    // an unrelated edit (e.g. just the description) never touches it.
+    const payload = showGarmentPricing
+      ? values
+      : { ...values, garmentPricing: values.garmentPricing.length > 0 ? [] : undefined } as AddonForm;
+    await onSave(payload);
     onOpenChange(false);
   };
 
@@ -146,15 +206,170 @@ function AddonFormDialog({
                       </div>
                     </FormControl>
                     <FormDescription className="text-xs">
-                      {watchType === 'percentage'
-                        ? 'Applied to order subtotal (items only)'
-                        : 'Flat fee added to order total'}
+                      {watchScope === 'item'
+                        ? (watchType === 'percentage'
+                          ? "Per garment: % of that line's unit price"
+                          : 'Per garment it is applied to')
+                        : (watchType === 'percentage'
+                          ? 'Applied to order subtotal (items only)'
+                          : 'Flat fee added to order total')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="scope"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Charged</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="item">Per garment — chosen on each order line</SelectItem>
+                      <SelectItem value="order">Once per order</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription className="text-xs">
+                    {field.value === 'item'
+                      ? 'Staff and customers pick how many garments on a line get it (e.g. starch on 2 of 5 shirts).'
+                      : 'Charged once on the whole order.'}
+                    {' '}Changing this only affects new orders.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {watchScope === 'item' && services.length > 0 && (
+              <FormField
+                control={form.control}
+                name="eligibleServiceIds"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Available with</FormLabel>
+                    <div className="grid grid-cols-2 gap-1.5 rounded-md border p-2">
+                      {services.map((svc) => {
+                        const id = idOf(svc);
+                        const checked = field.value.includes(id);
+                        return (
+                          <label key={id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) => field.onChange(
+                                v ? [...field.value, id] : field.value.filter((x: string) => x !== id)
+                              )}
+                            />
+                            {svc.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <FormDescription className="text-xs">
+                      Leave all unticked to allow it with every service.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {showGarmentPricing && (
+              <div className="space-y-2 rounded-md border p-3 bg-muted/30">
+                <div>
+                  <p className="text-sm font-medium">Price by garment <span className="text-muted-foreground font-normal">(optional)</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Override the flat amount above for specific garments — e.g. Stain Removal at ₦500 on a
+                    Shirt but ₦1,000 on a Bedsheet. Narrow a row to one service, or leave it for any service
+                    that garment is ordered under. A garment with no row here uses the flat amount.
+                  </p>
+                </div>
+
+                {priceRows.length > 0 && (
+                  <div className="space-y-2">
+                    {priceRows.map((row, i) => (
+                      <div key={row.id} className="grid grid-cols-[1fr_1fr_90px_28px] gap-1.5 items-start">
+                        <FormField
+                          control={form.control}
+                          name={`garmentPricing.${i}.garmentName`}
+                          render={({ field }) => (
+                            <FormItem>
+                              {garmentNames.length > 0 ? (
+                                <Select onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Garment" /></SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {garmentNames.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input className="h-8 text-xs" placeholder="Garment name" {...field} />
+                              )}
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`garmentPricing.${i}.serviceId`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <Select
+                                onValueChange={(v) => field.onChange(v === '__any' ? undefined : v)}
+                                value={field.value ?? '__any'}
+                              >
+                                <FormControl>
+                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any service" /></SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="__any">Any service</SelectItem>
+                                  {rowServiceOptions.map((svc) => (
+                                    <SelectItem key={idOf(svc)} value={idOf(svc)}>{svc.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`garmentPricing.${i}.price`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Input type="number" min={0} step={50} className="h-8 text-xs" placeholder="₦" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="button" variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => removePriceRow(i)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                    {typeof form.formState.errors.garmentPricing?.message === 'string' && (
+                      <p className="text-xs text-destructive">{form.formState.errors.garmentPricing.message}</p>
+                    )}
+                  </div>
+                )}
+
+                <Button
+                  type="button" variant="outline" size="sm" className="h-7 text-xs"
+                  onClick={() => addPriceRow({ garmentName: garmentNames[0] || '', serviceId: undefined, price: 0 })}
+                >
+                  <Plus className="mr-1 h-3 w-3" /> Add garment price
+                </Button>
+              </div>
+            )}
 
             <FormField
               control={form.control}
@@ -205,9 +420,17 @@ function AddonFormDialog({
 
 export function AddonsTab() {
   const {
-    addons, isLoading,
+    addons, services, categories, isLoading,
     createAddon, updateAddon, deleteAddon,
   } = useServiceStore();
+  const activeServices = (Array.isArray(services) ? services : []).filter((s: any) => s.isActive !== false);
+  // Distinct garment names from the price list (a garment like "Shirt" spans
+  // several categories, one per service) — powers the per-garment price picker.
+  const garmentNames = [...new Set(
+    (Array.isArray(categories) ? categories : [])
+      .filter((c: any) => c.isActive !== false && c.name)
+      .map((c: any) => String(c.name).trim())
+  )].sort((a, b) => a.localeCompare(b));
 
   const [createOpen,   setCreateOpen]   = useState(false);
   const [editTarget,   setEditTarget]   = useState<any>(null);
@@ -218,10 +441,31 @@ export function AddonsTab() {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  const valueLabel = (addon: any) =>
-    addon.type === 'fixed'
-      ? `+₦${Number(addon.value).toLocaleString()}`
+  const valueLabel = (addon: any) => {
+    if (addon.scope === 'item') {
+      return addon.type === 'fixed'
+        ? `+₦${Number(addon.value).toLocaleString()} per garment`
+        : `+${addon.value}% of the garment price`;
+    }
+    return addon.type === 'fixed'
+      ? `+₦${Number(addon.value).toLocaleString()} per order`
       : `+${addon.value}% of subtotal`;
+  };
+
+  const serviceNames = (addon: any) => {
+    const ids: string[] = (addon.eligibleServiceIds || []).map(idOf);
+    if (addon.scope !== 'item' || ids.length === 0) return null;
+    return activeServices.filter((s: any) => ids.includes(idOf(s))).map((s: any) => s.name).join(', ');
+  };
+
+  const garmentPriceSummary = (addon: any) => {
+    const rows: any[] = addon.garmentPricing || [];
+    if (!rows.length) return null;
+    const svcName = (id: any) => activeServices.find((s: any) => idOf(s) === idOf(id))?.name;
+    return rows
+      .map((r) => `${r.garmentName}${r.serviceId ? ` (${svcName(r.serviceId) || 'a service'})` : ''} ₦${Number(r.price).toLocaleString()}`)
+      .join(', ');
+  };
 
   const handleCreate = async (values: AddonForm) => {
     try {
@@ -325,6 +569,12 @@ export function AddonsTab() {
                     {valueLabel(addon)}
                   </span>
                 </div>
+                {serviceNames(addon) && (
+                  <p className="text-xs text-muted-foreground">Only with: {serviceNames(addon)}</p>
+                )}
+                {garmentPriceSummary(addon) && (
+                  <p className="text-xs text-muted-foreground">Priced by garment: {garmentPriceSummary(addon)}</p>
+                )}
 
                 <Separator />
 
@@ -363,6 +613,8 @@ export function AddonsTab() {
         onOpenChange={setCreateOpen}
         title="Create Add-on"
         onSave={handleCreate}
+        services={activeServices}
+        garmentNames={garmentNames}
       />
 
       {/* Edit dialog */}
@@ -374,6 +626,8 @@ export function AddonsTab() {
           initial={editTarget}
           title={`Edit "${editTarget.name}"`}
           onSave={handleEdit}
+          services={activeServices}
+          garmentNames={garmentNames}
         />
       )}
 

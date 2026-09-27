@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { useEffect, useMemo, useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { ModalForm } from '@/components/shared/ModalForm';
@@ -35,21 +35,16 @@ import { useServiceStore } from '@/stores/useServiceStore';
 import { useStaffStore } from '@/stores/useStaffStore';
 import { toast } from 'sonner';
 import {
-  Loader2, Plus, Trash2, Wand2, Tag,
+  Loader2, Tag,
   AlertTriangle, ArrowRight, Wallet, Lock,
 } from 'lucide-react';
+import { OrderLinesEditor, OrderLinesSummary, draftTotals } from '@/components/orders/OrderLinesEditor';
+import {
+  type DraftLine, buildGarmentCatalogue, draftsFromOrder, emptyLine, lineProblem, linePayload,
+  estimateLine, orderLevelAddons,
+} from '@/lib/orderLines';
 
 // ── Schema ─────────────────────────────────────────────────────────────────────
-
-const orderItemSchema = z.object({
-  _id:         z.string().optional(),
-  categoryId:  z.string().optional(),
-  serviceId:   z.string().min(1, 'Service required'),
-  itemType:    z.string().min(1, 'Item required'),
-  quantity:    z.coerce.number().min(1, 'Min quantity is 1'),
-  unitPrice:   z.coerce.number().min(0, 'Price must be 0 or more'),
-  description: z.string().optional(),
-});
 
 const editOrderSchema = z.object({
   walkInCustomer: z.object({
@@ -59,7 +54,6 @@ const editOrderSchema = z.object({
   serviceLevel:        z.string().optional(),
   serviceLevelId:      z.string().optional(),
   orderType:           z.enum(['walk-in', 'pickup-delivery']),
-  items:               z.array(orderItemSchema).min(1, 'At least one item is required'),
   pickupAddress: z.object({
     street: z.string().optional(),
     city:   z.string().optional(),
@@ -106,9 +100,11 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   const isWalkIn = !!(order?.walkInCustomer?.name) || order?.orderSource === 'offline';
 
   // ── Active data ─────────────────────────────────────────────────────────────
-  const activeServices = (Array.isArray(services) ? services : []).filter((s) => s.isActive !== false);
   const activeLevels   = (Array.isArray(serviceLevels) ? serviceLevels : []);
-  const activeAddons   = (Array.isArray(addons) ? addons : []).filter((a) => a.isActive !== false);
+  // Order-level add-ons only — per-garment add-ons live on each line
+  const activeAddons   = orderLevelAddons(addons);
+  const catalogue      = useMemo(() => buildGarmentCatalogue(services, categories), [services, categories]);
+  const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
 
   // ── Fetch on open ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -127,24 +123,6 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   const computedValues = useMemo(() => {
     if (!order) return null;
 
-    const findServiceId = (name: string) => {
-      if (!name) return '';
-      const s = activeServices.find(
-        (sv: any) => sv.name === name || sv.name?.toLowerCase() === name?.toLowerCase()
-      );
-      return s?.id || s?._id || '';
-    };
-
-    const resolvedItems = (order.items || []).map((item: any) => ({
-      _id:         item._id        || undefined,
-      categoryId:  item.categoryId || undefined,
-      serviceId:   findServiceId(item.serviceName || item.serviceType),
-      itemType:    item.itemType   || '',
-      quantity:    item.quantity   || 1,
-      unitPrice:   item.unitPrice  || 0,
-      description: item.description || '',
-    }));
-
     // Safely extract serviceLevelId regardless of whether it is a populated
     // object, a plain string, or null  (typeof null === 'object' in JS).
     const slRaw = order.serviceLevelId;
@@ -161,9 +139,6 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
       serviceLevelId:      resolvedLevelId,
       serviceLevel:        order.serviceLevel || '',
       orderType:           (order.orderType as 'walk-in' | 'pickup-delivery') || 'walk-in',
-      items: resolvedItems.length > 0
-        ? resolvedItems
-        : [{ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' }],
       pickupAddress:       order.pickupAddress   || { street: '', city: '', state: '' },
       deliveryAddress:     order.deliveryAddress || { street: '', city: '', state: '' },
       assignedStaff:       order.assignedStaff?._id || order.assignedStaff || '',
@@ -173,13 +148,12 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
       editNote:            '',
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?._id, activeServices.length, activeLevels.length]);
+  }, [order?._id, activeLevels.length]);
 
   // Empty fallback for the very first render before any order is selected
   const emptyDefaults: EditOrderForm = {
     walkInCustomer: { name: '', phone: '' },
     serviceLevelId: '', serviceLevel: '', orderType: 'walk-in',
-    items: [{ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' }],
     pickupAddress: { street: '', city: '', state: '' },
     deliveryAddress: { street: '', city: '', state: '' },
     assignedStaff: '', specialInstructions: '', notes: '', discount: 0, editNote: '',
@@ -191,8 +165,6 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
     defaultValues: computedValues ?? emptyDefaults,
   });
 
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: 'items' });
-
   // ── Re-sync form when data loads asynchronously after first render ──────────
   // (The component key in the parent ensures a full remount on order change;
   //  this effect only handles the case where services/levels finish loading
@@ -200,51 +172,20 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   useEffect(() => {
     if (!computedValues || !open) return;
     form.reset(computedValues);
+    // Lines keep their ids, agreed prices and garment counts — the server
+    // refuses to drop or reduce garments that are already ready or collected.
+    const drafts = draftsFromOrder(order, catalogue);
+    setLines(drafts.length ? drafts : [emptyLine()]);
     setSelectedAddonIds(
       (order?.addons || [])
         .map((a: any) => (a.addonId?._id || a.addonId)?.toString())
         .filter(Boolean)
     );
-  }, [computedValues, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [computedValues, open, catalogue.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
-  const resolveServiceId = (name: string) => {
-    if (!name) return '';
-    const found = activeServices.find(
-      (s) => s.name === name || s.name?.toLowerCase() === name?.toLowerCase()
-    );
-    return found?.id || found?._id || '';
-  };
-
-  const getCategoriesForService = (serviceId: string) => {
-    if (!serviceId) return [];
-    return (Array.isArray(categories) ? categories : []).filter((c) => {
-      const catServiceId = (c.serviceId?._id || c.serviceId)?.toString();
-      return catServiceId === serviceId && c.isActive !== false;
-    });
-  };
-
-  const handleServiceChange = (index: number, serviceId: string) => {
-    form.setValue(`items.${index}.serviceId`, serviceId);
-    form.setValue(`items.${index}.itemType`, '');
-    form.setValue(`items.${index}.unitPrice`, 0);
-  };
-
-  const handleItemChange = (index: number, categoryName: string) => {
-    form.setValue(`items.${index}.itemType`, categoryName);
-    const rowServiceId = form.getValues(`items.${index}.serviceId`);
-    const category = (Array.isArray(categories) ? categories : []).find((c) => {
-      const catServiceId = (c.serviceId?._id || c.serviceId)?.toString();
-      return c.name === categoryName && (!rowServiceId || catServiceId === rowServiceId);
-    });
-    if (category?.basePrice != null) {
-      form.setValue(`items.${index}.unitPrice`, category.basePrice, { shouldValidate: true });
-    }
-  };
-
   // ── Live pricing ────────────────────────────────────────────────────────────
-  const watchItems        = form.watch('items');
   const watchOrderType    = form.watch('orderType');
   const watchDiscount     = form.watch('discount') || 0;
   const watchServiceLevId = form.watch('serviceLevelId');
@@ -252,16 +193,17 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   const selectedLevel = activeLevels.find((lvl: any) => (lvl.id || lvl._id) === watchServiceLevId);
   const levelPct      = selectedLevel?.percentageAdjustment ?? 0;
 
-  const subtotal        = watchItems.reduce((sum, item) => sum + (item.quantity || 0) * (item.unitPrice || 0), 0);
+  const { serviceTotal: subtotal, lineAddonsTotal, garments } = draftTotals(lines, catalogue, addons);
   const pickupFee       = watchOrderType === 'pickup-delivery' ? 500 : 0;
   const deliveryFee     = watchOrderType === 'pickup-delivery' ? 500 : 0;
   const serviceLevelFee = Math.round(subtotal * levelPct / 100);
 
   const selectedAddons = activeAddons.filter((a) => selectedAddonIds.includes(a.id || a._id));
-  const addonsFee      = selectedAddons.reduce((sum, a) => {
+  const orderAddonsFee = selectedAddons.reduce((sum, a) => {
     const amount = a.type === 'fixed' ? a.value : Math.round(subtotal * a.value / 100);
     return sum + amount;
   }, 0);
+  const addonsFee      = orderAddonsFee + lineAddonsTotal;
 
   const total = Math.max(0, subtotal + pickupFee + deliveryFee + serviceLevelFee + addonsFee - watchDiscount);
 
@@ -287,9 +229,13 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
       }
     }
 
+    const problem = lines.map(lineProblem).find(Boolean);
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+
     const orderId = order._id || order.id;
-    const resolveServiceType = (serviceId: string) =>
-      activeServices.find((s) => (s.id || s._id) === serviceId)?.name || serviceId;
 
     try {
       const payload: Record<string, any> = {
@@ -298,17 +244,10 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
         serviceLevelName:       selectedLevel?.name || '',
         serviceLevelPercentage: levelPct,
         orderType:              data.orderType,
-        items: data.items.map((item) => ({
-          _id:         item._id || undefined,
-          itemType:    item.itemType,
-          serviceType: resolveServiceType(item.serviceId),
-          serviceName: resolveServiceType(item.serviceId),
-          quantity:    item.quantity,
-          unitPrice:   item.unitPrice,
-          total:       item.quantity * item.unitPrice,
-          categoryId:  item.categoryId || undefined,
-          description: item.description || undefined,
-        })),
+        serviceType: estimateLine(lines[0], catalogue, addons).serviceName || order.serviceType,
+        // Ids and quantities only — the server prices each line, keeps the
+        // agreed price on unchanged lines and protects ready/collected garments
+        items: lines.map(linePayload),
         assignedStaff:       data.assignedStaff || undefined,
         specialInstructions: data.specialInstructions || undefined,
         notes:               data.notes || undefined,
@@ -543,225 +482,21 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
 
           {/* ── Items ─────────────────────────────────────────────────── */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold">Items</h3>
-                <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                  <Wand2 className="h-3 w-3" />
-                  Unit price auto-fills from the service price list
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  append({ serviceId: '', itemType: '', quantity: 1, unitPrice: 0, description: '' })
-                }
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                Add Item
-              </Button>
+            <div>
+              <h3 className="text-sm font-semibold">Items</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Lines keep the price agreed when they were ordered. Garments already marked ready or
+                collected can't be removed or reduced.
+              </p>
             </div>
-
-            {/* Desktop column headers */}
-            <div className="hidden md:grid grid-cols-12 gap-2 px-1">
-              <span className="col-span-3 text-xs text-muted-foreground font-medium">Service</span>
-              <span className="col-span-3 text-xs text-muted-foreground font-medium">Item</span>
-              <span className="col-span-2 text-xs text-muted-foreground font-medium">Qty</span>
-              <span className="col-span-2 text-xs text-muted-foreground font-medium">Unit Price (₦)</span>
-              <span className="col-span-1 text-xs text-muted-foreground font-medium text-right">Total</span>
-              <span className="col-span-1" />
-            </div>
-
-            {fields.map((field, index) => {
-              const selectedServiceId    = watchItems[index]?.serviceId || '';
-              const selectedItemType     = watchItems[index]?.itemType  || '';
-              const categoriesForService = getCategoriesForService(selectedServiceId);
-              const matchedCategory      = categoriesForService.find((c) => c.name === selectedItemType);
-              const isAutoFilled         = matchedCategory && matchedCategory.basePrice === watchItems[index]?.unitPrice;
-              const rowTotal             = (watchItems[index]?.quantity || 0) * (watchItems[index]?.unitPrice || 0);
-
-              const ServiceField = (
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.serviceId`}
-                  render={({ field: f }) => (
-                    <FormItem>
-                      <Select value={f.value} onValueChange={(val) => handleServiceChange(index, val)}>
-                        <FormControl>
-                          <SelectTrigger className="h-9 w-full">
-                            <SelectValue placeholder="Select service" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {activeServices.length === 0 ? (
-                            <SelectItem value="__none" disabled>No services — add on Services page</SelectItem>
-                          ) : (
-                            activeServices
-                              .filter((s) => !!(s.id || s._id))
-                              .map((s) => {
-                                const id = s.id || s._id;
-                                return <SelectItem key={id} value={id}>{s.name}</SelectItem>;
-                              })
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              );
-
-              const ItemField = (
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.itemType`}
-                  render={({ field: f }) => (
-                    <FormItem>
-                      <Select
-                        value={f.value}
-                        onValueChange={(val) => handleItemChange(index, val)}
-                        disabled={!selectedServiceId}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-9 w-full">
-                            <SelectValue placeholder={selectedServiceId ? 'Select item' : 'Pick service first'} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {categoriesForService.length === 0 ? (
-                            <SelectItem value="__none" disabled>No items for this service</SelectItem>
-                          ) : (
-                            categoriesForService
-                              .filter((c) => !!c.name)
-                              .map((c) => (
-                                <SelectItem key={c.id || c._id} value={c.name}>
-                                  {c.name}
-                                  <span className="text-xs text-muted-foreground ml-1.5">
-                                    ₦{(c.basePrice || 0).toLocaleString()}/{c.unit || 'item'}
-                                  </span>
-                                </SelectItem>
-                              ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              );
-
-              const QtyField = (
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.quantity`}
-                  render={({ field: f }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Input type="number" min={1} className="h-9 w-full" {...f} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              );
-
-              const PriceField = (
-                <FormField
-                  control={form.control}
-                  name={`items.${index}.unitPrice`}
-                  render={({ field: f }) => (
-                    <FormItem>
-                      <FormControl>
-                        <div className="relative">
-                          <Input
-                            type="number"
-                            min={0}
-                            className={`h-9 w-full ${isAutoFilled ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800' : ''}`}
-                            {...f}
-                          />
-                          {isAutoFilled && (
-                            <Wand2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-green-500 pointer-events-none" />
-                          )}
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              );
-
-              const DeleteBtn = fields.length > 1 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => remove(index)}
-                  className="text-destructive h-8 w-8 p-0"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              ) : null;
-
-              return (
-                <div key={field.id}>
-                  {/* Mobile card */}
-                  <div className="md:hidden rounded-lg border p-3 space-y-3 bg-muted/20">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted-foreground">Item {index + 1}</span>
-                      {DeleteBtn}
-                    </div>
-                    <div className="space-y-2">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Service</p>
-                        {ServiceField}
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">Item</p>
-                        {ItemField}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Qty</p>
-                          {QtyField}
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                            Unit Price (₦)
-                            {isAutoFilled && <Wand2 className="h-2.5 w-2.5 text-green-500" />}
-                          </p>
-                          {PriceField}
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center pt-1 border-t">
-                        <span className="text-xs text-muted-foreground">Line total</span>
-                        <span className="text-sm font-semibold">₦{rowTotal.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Desktop row */}
-                  <div className="hidden md:grid grid-cols-12 gap-2 items-start">
-                    <div className="col-span-3">{ServiceField}</div>
-                    <div className="col-span-3">{ItemField}</div>
-                    <div className="col-span-2">{QtyField}</div>
-                    <div className="col-span-2">{PriceField}</div>
-                    <div className="col-span-1 text-sm font-medium text-right pt-2">
-                      ₦{rowTotal.toLocaleString()}
-                    </div>
-                    <div className="col-span-1 flex justify-center pt-1">{DeleteBtn}</div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <p className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
-              <span className="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
-                <Wand2 className="h-3 w-3" /> Green
-              </span>
-              = price from price list. Edit to override.
-            </p>
+            <OrderLinesEditor
+              lines={lines}
+              onChange={setLines}
+              catalogue={catalogue}
+              addons={addons}
+              allowCustom
+              disabled={isSubmitting || isLocked}
+            />
           </div>
 
           {/* ── Pickup / Delivery Addresses ────────────────────────────── */}
@@ -942,26 +677,18 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
           <div className="space-y-2 rounded-lg border p-4 bg-muted/50">
             <h3 className="text-sm font-semibold">Pricing Summary</h3>
             <div className="space-y-1 text-sm">
-              {/* Per-item lines */}
-              {watchItems.filter((item) => item.itemType && (item.unitPrice ?? 0) > 0).map((item, i) => {
-                const svc      = activeServices.find((s) => (s.id || s._id) === item.serviceId);
-                const lineTotal = (item.quantity || 0) * (item.unitPrice || 0);
-                return (
-                  <div key={i} className="flex justify-between text-muted-foreground text-xs">
-                    <span>
-                      {svc?.name ? `${svc.name} — ` : ''}{item.itemType} × {item.quantity}
-                    </span>
-                    <span>₦{lineTotal.toLocaleString()}</span>
-                  </div>
-                );
-              })}
-              {watchItems.some((item) => item.itemType && (item.unitPrice ?? 0) > 0) && (
-                <Separator className="my-1" />
-              )}
+              <OrderLinesSummary lines={lines} catalogue={catalogue} addons={addons} />
+              {garments > 0 && <Separator className="my-1" />}
               <div className="flex justify-between">
-                <span>Subtotal</span>
+                <span>Service total</span>
                 <span>₦{subtotal.toLocaleString()}</span>
               </div>
+              {lineAddonsTotal > 0 && (
+                <div className="flex justify-between text-purple-700 dark:text-purple-400">
+                  <span>Garment add-ons</span>
+                  <span>₦{lineAddonsTotal.toLocaleString()}</span>
+                </div>
+              )}
               {pickupFee > 0 && (
                 <div className="flex justify-between">
                   <span>Pickup Fee</span>

@@ -27,6 +27,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { SwipeableCard } from '@/components/shared/SwipeableCard';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
+import { GarmentProgressBadge } from '@/components/orders/OrderGarmentsPanel';
+import {
+  GarmentIndicators, GARMENT_FILTER_LABELS, splitCounts, type GarmentFilter, type GarmentStats,
+} from '@/components/orders/GarmentIndicators';
+import { garmentCount, lineServiceLabel } from '@/lib/orderLines';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
 import { UpdateStatusModal } from './UpdateStatusModal';
 import { StaffOrderDetailModal } from './StaffOrderDetailModal';
@@ -153,6 +158,8 @@ export default function StaffOrdersPage() {
   const [viewScope,    setViewScope]    = useState<'all' | 'mine'>('all');
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
+  const [garmentStats, setGarmentStats] = useState<GarmentStats | null>(null);
+  const [garmentFilter, setGarmentFilter] = useState<GarmentFilter>('');
   const [isLoading,    setIsLoading]    = useState(false);
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [listKey,      setListKey]      = useState(0);
@@ -174,8 +181,13 @@ export default function StaffOrdersPage() {
 
   // ── Fetch tab counts — scope=all shows system-wide counts, scope=mine shows personal ──
   const fetchCounts = useCallback(() => {
-    apiClient.get('/orders/staff-counts', { params: { scope: viewScope } })
-      .then((res) => { if (res.data?.data) setCounts(res.data.data); })
+    apiClient.get('/orders/staff-counts', { params: { scope: viewScope, include: 'fulfilment' } })
+      .then((res) => {
+        if (!res.data?.data) return;
+        const { counts: byStatus, garments } = splitCounts(res.data.data);
+        setCounts(byStatus);
+        setGarmentStats(garments);
+      })
       .catch(() => {});
   }, [viewScope]);
 
@@ -275,15 +287,18 @@ export default function StaffOrdersPage() {
     return () => { cancelled = true; };
   }, [activeTab, viewScope, refreshKey, listKey]);
 
-  // Cross-tab search
+  // Cross-tab search — and the garment filters (ready for collection, …)
   useEffect(() => {
     const q = search.trim();
-    if (!q) { setSearchResults([]); setIsSearching(false); return; }
+    if (!q && !garmentFilter) { setSearchResults([]); setIsSearching(false); return; }
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await apiClient.get('/orders', { params: { search: q, limit: '20' } });
+        const params: Record<string, string> = { limit: garmentFilter ? '100' : '20' };
+        if (q) params.search = q;
+        if (garmentFilter) params.fulfilment = garmentFilter;
+        const res = await apiClient.get('/orders', { params });
         const raw = res.data.data;
         setSearchResults(Array.isArray(raw) ? raw : raw?.orders ?? []);
       } catch {
@@ -292,13 +307,13 @@ export default function StaffOrdersPage() {
         setIsSearching(false);
       }
     }, 300);
-  }, [search]);
+  }, [search, garmentFilter, listKey]);
 
   const filteredOrders = useMemo(() => orders, [orders]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const myTotal   = Object.entries(counts)
-    .filter(([k]) => k !== 'pending' && k !== 'cancelled')
+    .filter(([k, v]) => k !== 'pending' && k !== 'cancelled' && typeof v === 'number')
     .reduce((s, [, v]) => s + v, 0);
   const inProgress = (counts['washing'] ?? 0) + (counts['ironing'] ?? 0) + (counts['in_progress'] ?? 0);
   const readyCount = counts['ready'] ?? 0;
@@ -395,16 +410,19 @@ export default function StaffOrdersPage() {
       cell: ({ row }) => {
         const items: any[] = row.original.items ?? [];
         const services = items.length > 0
-          ? [...new Set(items.map((i: any) => i.serviceType).filter(Boolean))]
-          : row.original.serviceType ? [row.original.serviceType] : [];
-        if (!services.length) return <span className="text-muted-foreground text-xs">—</span>;
+          ? [...new Set(items.map((i: any) => lineServiceLabel(i)).filter(Boolean))]
+          : row.original.serviceType ? [SERVICE_LABELS[row.original.serviceType] ?? row.original.serviceType.replace(/-/g, ' ')] : [];
+        const garments = garmentCount(items);
+        if (!services.length && !garments) return <span className="text-muted-foreground text-xs">—</span>;
         return (
-          <div className="flex flex-wrap gap-1">
-            {services.map((s: string) => (
-              <Badge key={s} variant="outline" className="capitalize text-xs">
-                {SERVICE_LABELS[s] ?? s.replace(/-/g, ' ')}
-              </Badge>
-            ))}
+          <div className="space-y-1">
+            <div className="flex flex-wrap gap-1">
+              {services.map((s: string) => (
+                <Badge key={s} variant="outline" className="capitalize text-xs">{s}</Badge>
+              ))}
+            </div>
+            {garments > 0 && <div className="text-xs text-muted-foreground">{garments} garment{garments === 1 ? '' : 's'}</div>}
+            <GarmentProgressBadge order={row.original} />
           </div>
         );
       },
@@ -644,6 +662,8 @@ export default function StaffOrdersPage() {
         </Card>
       </div>
 
+      <GarmentIndicators stats={garmentStats} active={garmentFilter} onSelect={setGarmentFilter} />
+
       {/* ── Global Cross-Tab Search ──────────────────────────────────────── */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -659,13 +679,14 @@ export default function StaffOrdersPage() {
       </div>
 
       {/* ── Cross-Tab Search Results ─────────────────────────────────────── */}
-      {search.trim() && (
+      {(search.trim() || garmentFilter) && (
         <div className="rounded-lg border bg-card shadow-sm">
           <div className="px-4 py-2 border-b flex items-center justify-between">
             <span className="text-sm font-medium">
-              {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} across all tabs`}
+              {isSearching ? 'Searching…' : `${searchResults.length} result${searchResults.length !== 1 ? 's' : ''} ${
+                garmentFilter ? `— ${GARMENT_FILTER_LABELS[garmentFilter]}` : 'across all tabs'}`}
             </span>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSearch('')}>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setSearch(''); setGarmentFilter(''); }}>
               Clear
             </Button>
           </div>
@@ -691,6 +712,7 @@ export default function StaffOrdersPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-mono font-semibold text-sm">{order.orderNumber}</span>
                     <OrderStatusBadge status={order.status} />
+                        <GarmentProgressBadge order={order} />
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
                     <span>{customerName(order)}</span>
@@ -874,6 +896,7 @@ export default function StaffOrdersPage() {
         open={!!detailOrder}
         onOpenChange={(open) => !open && setDetailOrder(null)}
         onViewReceipt={(order) => { setDetailOrder(null); setReceiptOrder(order); }}
+        onChanged={refresh}
       />
       <BarcodeScannerModal
         open={scannerOpen}
@@ -1031,6 +1054,7 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
             <OrderStatusBadge status={order.status} />
+                        <GarmentProgressBadge order={order} />
             {tabKey !== 'pending' && <PaymentStatusBadge status={payStatus} />}
           </div>
           <div className="text-right">

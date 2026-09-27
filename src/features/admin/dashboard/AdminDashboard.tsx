@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import apiClient from '@/lib/api/client';
 import { useNavigate } from 'react-router-dom';
+import { GarmentIndicators, type GarmentStats } from '@/components/orders/GarmentIndicators';
 import {
   AreaChart,
   Area,
@@ -161,6 +162,7 @@ export default function AdminDashboard() {
     activeOrders: number;
     pendingPayments: number;
     todayOrders: number;
+    fulfilment?: GarmentStats;
   }
   const [dashStats, setDashStats] = useState<DashStats | null>(null);
   const [totalCustomers, setTotalCustomers] = useState<number | null>(null);
@@ -384,6 +386,14 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Garments at the counter — opens the orders page */}
+      {dashStats?.fulfilment && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Garments at the counter</p>
+          <GarmentIndicators stats={dashStats.fulfilment} active="" onSelect={() => navigate('/admin/orders')} />
+        </div>
+      )}
 
       {/* ------------------------------------------------------------------ */}
       {/* Charts Row 1: Revenue Trend + Orders by Status */}

@@ -9,7 +9,7 @@ import { DollarSign, ShoppingCart, Users, TrendingUp } from 'lucide-react';
 import { useAnalyticsStore } from '@/stores/useAnalyticsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { RevenueChart } from './charts/RevenueChart';
-import { OrdersByStatusChart, OrdersByServiceChart } from './charts/OrdersChart';
+import { OrdersByStatusChart, OrdersByServiceChart, GarmentSummary } from './charts/OrdersChart';
 import { PayrollChart } from './charts/PayrollChart';
 import { StaffProductivityChart } from './charts/StaffProductivityChart';
 
@@ -164,6 +164,17 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <OrdersByServiceChart />
+              </CardContent>
+            </Card>
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Garments</CardTitle>
+                <CardDescription>
+                  Where every garment is, and garments per service (an order can hold several services)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <GarmentSummary />
               </CardContent>
             </Card>
           </div>

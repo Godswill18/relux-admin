@@ -1,7 +1,9 @@
 // ============================================================================
-// STAFF ORDER DETAIL MODAL - Full read-only view of a single order
+// STAFF ORDER DETAIL MODAL - Full view of a single order, including where its
+// garments are (ready / collected) and the counter actions for them
 // ============================================================================
 
+import { useCallback, useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -23,7 +25,6 @@ import {
   CreditCard,
   Calendar,
   FileText,
-  Package,
   MapPin,
   Wifi,
   Store,
@@ -32,6 +33,10 @@ import {
 } from 'lucide-react';
 import { PriorityBadge } from '@/components/shared/StatusBadges';
 import { CountdownBadge } from '@/components/shared/CountdownBadge';
+import { OrderGarmentsPanel, canManageGarments } from '@/components/orders/OrderGarmentsPanel';
+import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel';
+import { useAuthStore } from '@/stores/useAuthStore';
+import apiClient from '@/lib/api/client';
 
 // ============================================================================
 // CONSTANTS
@@ -122,9 +127,31 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onViewReceipt?: (order: any) => void;
+  /** Called after garments are marked ready or collected, so lists can refresh */
+  onChanged?: () => void;
 }
 
-export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt }: Props) {
+export function StaffOrderDetailModal({ order: listOrder, open, onOpenChange, onViewReceipt, onChanged }: Props) {
+  const role = useAuthStore((st) => st.user?.role) as string | undefined;
+  // The list row lacks collection history and garment activity — load the full
+  // order when the modal opens, and again after every garment action.
+  const [full, setFull] = useState<any>(null);
+  const orderId = listOrder?._id || listOrder?.id;
+  const load = useCallback(async () => {
+    if (!orderId) return;
+    try {
+      const res = await apiClient.get(`/orders/${orderId}`);
+      setFull(res.data?.data?.order || null);
+    } catch {
+      // Keep showing the list row; the panel still works from it
+    }
+  }, [orderId]);
+  useEffect(() => {
+    setFull(null);
+    if (open) load();
+  }, [open, load]);
+
+  const order = full && String(full._id) === String(orderId) ? full : listOrder;
   if (!order) return null;
 
   const isWalkIn = order.orderSource === 'offline';
@@ -236,61 +263,26 @@ export function StaffOrderDetailModal({ order, open, onOpenChange, onViewReceipt
               </>
             )}
 
-            {/* ── Items ──────────────────────────────────────────────────── */}
+            {/* ── Items & garments ───────────────────────────────────────── */}
             {items.length > 0 && (
               <>
                 <Separator className="my-1" />
-                <Section title={`Items (${items.length})`} />
-                <div className="space-y-4 mt-1">
-                  {(() => {
-                    const buildGroupKey = (item: any) => {
-                      const svcType = SERVICE_LABELS[item.serviceType] ?? null;
-                      if (item.serviceName && svcType && item.serviceName !== svcType) {
-                        return `${item.serviceName} — ${svcType}`;
-                      }
-                      return item.serviceName || svcType || (item.serviceType && item.serviceType !== 'laundry' ? item.serviceType.replace(/-/g, ' ') : null) || 'Laundry';
-                    };
-                    const groups = new Map<string, any[]>();
-                    items.forEach((item: any) => {
-                      const key = buildGroupKey(item);
-                      if (!groups.has(key)) groups.set(key, []);
-                      groups.get(key)!.push(item);
-                    });
-                    return Array.from(groups.entries()).map(([groupName, groupItems]) => (
-                      <div key={groupName}>
-                        {/* Service group header */}
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <span className="text-xs font-bold uppercase tracking-wider text-primary">{groupName}</span>
-                          <div className="flex-1 h-px bg-border" />
-                          <span className="text-xs text-muted-foreground">{groupItems.reduce((s: number, i: any) => s + (i.quantity ?? 1), 0)} pc(s)</span>
-                        </div>
-                        {/* Items */}
-                        <div className="rounded-lg border divide-y">
-                          {groupItems.map((item: any, i: number) => (
-                            <div key={item._id ?? i} className="flex items-center justify-between px-3 py-2.5">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <Package className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                <p className="text-sm font-medium capitalize truncate">
-                                  {item.itemType ?? item.name ?? `Item ${i + 1}`}
-                                </p>
-                              </div>
-                              <div className="text-right shrink-0 ml-4">
-                                <p className="text-sm font-medium">
-                                  {money((item.unitPrice ?? 0) * (item.quantity ?? 1))}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  ₦{(item.unitPrice ?? 0).toLocaleString()} × {item.quantity ?? 1}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ));
-                  })()}
+                <Section title={`Items (${items.reduce((n: number, i: any) => n + (i.quantity || 0), 0)} garments)`} />
+                <div className="mt-1">
+                  <OrderGarmentsPanel
+                    order={order}
+                    canManage={canManageGarments(role)}
+                    onChanged={() => { load(); onChanged?.(); }}
+                  />
                 </div>
               </>
             )}
+
+            {/* ── Internal staff notes ──────────────────────────────────── */}
+            <Separator className="my-1" />
+            <div className="mt-1">
+              <OrderNotesPanel orderId={orderId} items={order.items} />
+            </div>
 
             {/* ── Pricing ────────────────────────────────────────────────── */}
             {Object.keys(pricing).length > 0 && (

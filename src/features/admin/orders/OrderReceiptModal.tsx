@@ -22,6 +22,15 @@ const RECEIPT_SVC_LABELS: Record<string, string> = {
   'iron-only': 'Iron Only',  'dry-clean': 'Dry Clean',
 };
 
+// Everything interpolated into the print window's HTML is escaped: item names,
+// notes and customer details are typed by people, and the print window runs
+// with this app's origin.
+const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
+));
+
+const lineAddons = (item: any): any[] => (Array.isArray(item?.addons) ? item.addons : []);
+
 function buildReceiptGroup(item: any): string {
   const svcType = RECEIPT_SVC_LABELS[item.serviceType] ?? null;
   if (item.serviceName && svcType && item.serviceName !== svcType) return `${item.serviceName} — ${svcType}`;
@@ -37,6 +46,8 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
   const pricing = order.pricing || {};
   const payment = order.payment || {};
   const qrValue = order.qrCode || order.orderNumber || '';
+  // Garments = sum of quantities, not the number of lines
+  const garments = items.reduce((s, i) => s + (Number(i?.quantity) || 0), 0);
   const total = pricing.total ?? order.total ?? 0;
   const createdAt = order.createdAt
     ? format(new Date(order.createdAt), 'dd/MM/yyyy HH:mm')
@@ -57,14 +68,19 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
       : Array.from(printGroups.entries()).map(([grp, grpItems]) => `
           <tr>
             <td colspan="2" style="padding:5px 0 2px;font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px dashed #999">
-              ${grp}
+              ${esc(grp)}
             </td>
           </tr>
           ${grpItems.map((item) => `
             <tr>
-              <td style="padding:2px 0 2px 8px">${item.itemType ?? '—'} × ${item.quantity ?? 1}</td>
+              <td style="padding:2px 0 2px 8px">${esc(item.itemType ?? '—')} × ${esc(item.quantity ?? 1)}</td>
               <td style="text-align:right;padding:2px 0">₦${((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</td>
             </tr>
+            ${lineAddons(item).map((a) => `
+            <tr>
+              <td style="padding:0 0 2px 16px;font-size:10px">+ ${esc(a.name)} × ${esc(a.quantity)}</td>
+              <td style="text-align:right;padding:0 0 2px;font-size:10px">₦${Number(a.total ?? 0).toLocaleString()}</td>
+            </tr>`).join('')}
           `).join('')}
         `).join('');
 
@@ -72,18 +88,20 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
     const addonsHtml = addons.length === 0 ? '' : `
       <tr>
         <td colspan="2" style="padding:5px 0 2px;font-weight:bold;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px dashed #999">
-          Add-ons
+          Order add-ons
         </td>
       </tr>
       ${addons.map((addon) => `
         <tr>
-          <td style="padding:2px 0 2px 8px">${addon.name || addon.addonId?.name || '—'}</td>
+          <td style="padding:2px 0 2px 8px">${esc(addon.name || addon.addonId?.name || '—')}</td>
           <td style="text-align:right;padding:2px 0">+₦${(addon.calculatedAmount ?? 0).toLocaleString()}</td>
         </tr>
       `).join('')}
     `;
 
     const extraFees = [
+      `<div class="row"><span>Garments</span><span>${garments}</span></div>`,
+      pricing.serviceFee > 0 ? `<div class="row"><span>Service level${order.serviceLevelName ? ` (${esc(order.serviceLevelName)})` : ''}</span><span>₦${Number(pricing.serviceFee).toLocaleString()}</span></div>` : '',
       pricing.pickupFee > 0 ? `<div class="row"><span>Pickup Fee</span><span>₦${Number(pricing.pickupFee).toLocaleString()}</span></div>` : '',
       pricing.deliveryFee > 0 ? `<div class="row"><span>Delivery Fee</span><span>₦${Number(pricing.deliveryFee).toLocaleString()}</span></div>` : '',
       pricing.discount > 0 ? `<div class="row"><span>Discount</span><span>-₦${Number(pricing.discount).toLocaleString()}</span></div>` : '',
@@ -100,7 +118,7 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Receipt — ${order.orderNumber ?? ''}</title>
+  <title>Receipt — ${esc(order.orderNumber ?? '')}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:'Courier New',Courier,monospace;font-size:12px;width:300px;margin:0 auto;padding:14px 8px;color:#000}
@@ -127,12 +145,12 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
     <div class="tagline">Professional Laundry Services</div>
   </div>
   <hr/>
-  <div class="row"><span><b>Order #</b></span><span>${order.orderNumber ?? '—'}</span></div>
+  <div class="row"><span><b>Order #</b></span><span>${esc(order.orderNumber ?? '—')}</span></div>
   <div class="row"><span>Date</span><span>${createdAt}</span></div>
-  <div class="row"><span>Customer</span><span>${customer?.name ?? 'Walk-in'}</span></div>
-  ${customer?.phone ? `<div class="row"><span>Phone</span><span>${customer.phone}</span></div>` : ''}
-  ${customer?.email ? `<div class="row"><span>Email</span><span>${customer.email}</span></div>` : ''}
-  <div class="row"><span>Status</span><span class="status">${order.status ?? 'pending'}</span></div>
+  <div class="row"><span>Customer</span><span>${esc(customer?.name ?? 'Walk-in')}</span></div>
+  ${customer?.phone ? `<div class="row"><span>Phone</span><span>${esc(customer.phone)}</span></div>` : ''}
+  ${customer?.email ? `<div class="row"><span>Email</span><span>${esc(customer.email)}</span></div>` : ''}
+  <div class="row"><span>Status</span><span class="status">${esc(order.status ?? 'pending')}</span></div>
   <div class="row"><span>Type</span><span>${isWalkIn ? 'Walk-in' : 'Online'}</span></div>
   <hr/>
   <table>
@@ -142,12 +160,12 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
   <hr/>
   ${extraFees}
   <div class="row total"><span>TOTAL</span><span>₦${Number(total).toLocaleString()}</span></div>
-  <div class="row"><span>Payment</span><span>${payment.method ?? 'cash'} · ${payment.status ?? 'pending'}</span></div>
+  <div class="row"><span>Payment</span><span>${esc(payment.method ?? 'cash')} · ${esc(payment.status ?? 'pending')}</span></div>
   <hr/>
   <div class="qr-box">
     ${qrDataUrl ? `<img src="${qrDataUrl}" width="110" height="110" />` : ''}
     <div class="qr-label">Scan to confirm delivery</div>
-    <div class="qr-code">${qrValue}</div>
+    <div class="qr-code">${esc(qrValue)}</div>
   </div>
   <hr/>
   <div class="footer">
@@ -215,9 +233,17 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
                   </div>
                   {/* Item rows */}
                   {grpItems.map((item, i) => (
-                    <div key={i} className="flex justify-between pl-2">
-                      <span>{(item as any).itemType ?? '—'} × {(item as any).quantity ?? 1}</span>
-                      <span>₦{(((item as any).unitPrice ?? 0) * ((item as any).quantity ?? 1)).toLocaleString()}</span>
+                    <div key={i}>
+                      <div className="flex justify-between pl-2">
+                        <span>{(item as any).itemType ?? '—'} × {(item as any).quantity ?? 1}</span>
+                        <span>₦{(((item as any).unitPrice ?? 0) * ((item as any).quantity ?? 1)).toLocaleString()}</span>
+                      </div>
+                      {lineAddons(item).map((a, k) => (
+                        <div key={k} className="flex justify-between pl-4 text-[10px] text-gray-600">
+                          <span>+ {a.name} × {a.quantity}</span>
+                          <span>₦{Number(a.total ?? 0).toLocaleString()}</span>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -229,7 +255,7 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
           {(order.addons || []).length > 0 && (
             <div className="text-gray-800">
               <div className="text-[9px] font-bold uppercase tracking-wide text-gray-600 border-b border-dashed border-gray-300 pb-0.5 mb-1">
-                Add-ons
+                Order add-ons
               </div>
               {(order.addons as any[]).map((addon: any, idx: number) => (
                 <div key={idx} className="flex justify-between pl-2">
@@ -244,6 +270,13 @@ export function OrderReceiptModal({ open, onOpenChange, order }: Props) {
 
           {/* Pricing */}
           <div className="space-y-0.5 text-gray-800">
+            <div className="flex justify-between"><span>Garments</span><span>{garments}</span></div>
+            {pricing.serviceFee > 0 && (
+              <div className="flex justify-between">
+                <span>Service level{order.serviceLevelName ? ` (${order.serviceLevelName})` : ''}</span>
+                <span>₦{Number(pricing.serviceFee).toLocaleString()}</span>
+              </div>
+            )}
             {pricing.pickupFee > 0 && <div className="flex justify-between"><span>Pickup Fee</span><span>₦{Number(pricing.pickupFee).toLocaleString()}</span></div>}
             {pricing.deliveryFee > 0 && <div className="flex justify-between"><span>Delivery Fee</span><span>₦{Number(pricing.deliveryFee).toLocaleString()}</span></div>}
             {pricing.discount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>-₦{Number(pricing.discount).toLocaleString()}</span></div>}

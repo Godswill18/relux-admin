@@ -1,15 +1,35 @@
 // ============================================================================
-// VIEW CUSTOMER MODAL - Read-only customer details view
+// VIEW CUSTOMER MODAL - Read-only customer details view, with the customer's
+// order history (walk-in and online) and where each order's garments are
 // ============================================================================
 
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ModalForm } from '@/components/shared/ModalForm';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { PortalStatusBadge } from '@/components/shared/StatusBadges';
 import { useCustomerStore } from '@/stores/useCustomerStore';
+import { useHasPermission } from '@/stores/useAuthStore';
+import { Permission } from '@/types';
 import { format } from 'date-fns';
-import { Loader2, User, Phone, Mail, MapPin, Award, Wallet, Calendar } from 'lucide-react';
+import { Loader2, User, Phone, Mail, MapPin, Award, Wallet, Calendar, Package } from 'lucide-react';
+import apiClient from '@/lib/api/client';
+import { OrderStatusBadge } from '@/components/shared/StatusBadges';
+import { StaffOrderDetailModal } from '@/features/staff/orders/StaffOrderDetailModal';
+import { fulfilmentOf, naira } from '@/lib/orderLines';
+
+/** "12 garments · 8 collected · 2 ready · 2 processing" */
+function garmentLine(order: any): string {
+  const f = fulfilmentOf(order);
+  if (!f.totalGarments) return 'No items';
+  const parts = [`${f.totalGarments} garment${f.totalGarments === 1 ? '' : 's'}`];
+  if (order.status === 'cancelled') return parts[0];
+  if (f.collectedGarments) parts.push(`${f.collectedGarments} collected`);
+  if (f.awaitingCollection) parts.push(`${f.awaitingCollection} ready`);
+  if (f.processingGarments) parts.push(`${f.processingGarments} processing`);
+  return parts.join(' · ');
+}
 
 // ============================================================================
 // COMPONENT
@@ -40,6 +60,35 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
 
   const customerDoc = customer?.customerId;
   const customerId = customerDoc?._id || customerDoc?.id;
+  const navigate = useNavigate();
+  const canOpenOrderPage = useHasPermission(Permission.VIEW_ORDERS);
+  const [orders, setOrders] = useState<any[] | null>(null);
+  const [ordersTotal, setOrdersTotal] = useState(0);
+  const [openOrder, setOpenOrder] = useState<any>(null);
+
+  // Order history by customer record — includes walk-in orders
+  useEffect(() => {
+    if (!open || !customerId) { setOrders(null); return; }
+    let cancelled = false;
+    apiClient.get('/orders', { params: { customerId, limit: 20 } })
+      .then((res) => {
+        if (cancelled) return;
+        setOrders(res.data?.data?.orders ?? []);
+        setOrdersTotal(res.data?.pagination?.total ?? 0);
+      })
+      .catch(() => { if (!cancelled) setOrders([]); });
+    return () => { cancelled = true; };
+  }, [open, customerId]);
+
+  const showOrder = (order: any) => {
+    // The full order page when this user may open it; otherwise the order modal
+    if (canOpenOrderPage) {
+      onOpenChange(false);
+      navigate(`/admin/orders/${order._id}`);
+    } else {
+      setOpenOrder(order);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -206,7 +255,57 @@ export function ViewCustomerModal({ open, onOpenChange, customer }: ViewCustomer
             </div>
           </div>
         </div>
+
+        <Separator />
+
+        {/* Orders */}
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
+            <Package className="h-3.5 w-3.5" />
+            Orders{ordersTotal ? ` (${ordersTotal})` : ''}
+          </p>
+          {!customerId ? (
+            <p className="text-sm text-muted-foreground">No customer record linked.</p>
+          ) : orders === null ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : orders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No orders yet.</p>
+          ) : (
+            <div className="rounded-lg border divide-y">
+              {orders.map((o) => (
+                <button
+                  key={o._id}
+                  type="button"
+                  onClick={() => showOrder(o)}
+                  className="w-full text-left px-3 py-2.5 hover:bg-muted/40 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-semibold">{o.orderNumber}</span>
+                    <OrderStatusBadge status={o.status} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <span className="text-xs text-muted-foreground">{garmentLine(o)}</span>
+                    <span className="text-xs font-medium">{naira(o.pricing?.total ?? o.total ?? 0)}</span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {o.createdAt ? format(new Date(o.createdAt), 'PP') : ''}
+                    {o.orderSource === 'offline' ? ' · Walk-in' : ' · Online'}
+                  </p>
+                </button>
+              ))}
+            </div>
+          )}
+          {ordersTotal > (orders?.length ?? 0) && (
+            <p className="text-xs text-muted-foreground">Showing the latest {orders?.length} of {ordersTotal}.</p>
+          )}
+        </div>
       </div>
+
+      <StaffOrderDetailModal
+        order={openOrder}
+        open={!!openOrder}
+        onOpenChange={(v) => !v && setOpenOrder(null)}
+      />
     </ModalForm>
   );
 }

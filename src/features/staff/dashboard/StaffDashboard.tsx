@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { GarmentIndicators, splitCounts, type GarmentStats } from '@/components/orders/GarmentIndicators';
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from '@/components/ui/card';
@@ -83,6 +84,8 @@ export default function StaffDashboard() {
   const [todayShift, setTodayShift]         = useState<any>(null);
   const [isLoading, setIsLoading]           = useState(true);
 
+  const [garmentStats, setGarmentStats] = useState<GarmentStats | null>(null);
+
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -110,6 +113,11 @@ export default function StaffDashboard() {
       setActiveOrders(active);
       setCompletedToday(todayCompletedCount);
       setTodayShift(shift);
+
+      // Counter-wide garment indicators — optional; the dashboard works without them
+      apiClient.get('/orders/staff-counts', { params: { scope: 'all', include: 'fulfilment' } })
+        .then((res) => setGarmentStats(splitCounts(res.data?.data).garments))
+        .catch(() => {});
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to load dashboard data');
     } finally {
@@ -215,6 +223,13 @@ export default function StaffDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {garmentStats && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">Garments at the counter</p>
+          <GarmentIndicators stats={garmentStats} active="" onSelect={() => navigate('/staff/orders')} />
+        </div>
+      )}
 
       {/* ── Quick Actions ──────────────────────────────────────────────────── */}
       <div className="grid gap-4 md:grid-cols-3">

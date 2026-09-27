@@ -2,7 +2,7 @@
 // ORDER DETAIL PAGE - Full Order View
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -60,6 +60,9 @@ import apiClient from '@/lib/api/client';
 import socketClient from '@/lib/socket/client';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import { getOrderStatusConfig } from '@/lib/statusConfig';
+import { OrderGarmentsPanel, canManageGarments } from '@/components/orders/OrderGarmentsPanel';
+import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 // ============================================================================
 // STATUS HELPERS
@@ -117,28 +120,30 @@ export default function OrderDetailPage() {
   const [isCancelOpen, setIsCancelOpen] = useState(false);
   const [pendingRestoreStatus, setPendingRestoreStatus] = useState<string | null>(null);
 
-  // Fetch single order
-  useEffect(() => {
+  const role = useAuthStore((st) => st.user?.role) as string | undefined;
+
+  // Fetch single order. `quiet` refreshes in place (after a garment action)
+  // without the full-page loading state.
+  const fetchOrder = useCallback(async (quiet = false) => {
     if (!id) return;
-
-    const fetchOrder = async () => {
-      try {
-        setIsLoading(true);
-        const response = await apiClient.get(`/orders/${id}`);
-        if (response.data.success) {
-          const raw = response.data.data;
-          setOrder(raw?.order || raw);
-        }
-      } catch (err) {
-        console.error('Failed to fetch order:', err);
-        toast.error('Failed to load order details');
-      } finally {
-        setIsLoading(false);
+    try {
+      if (!quiet) setIsLoading(true);
+      const response = await apiClient.get(`/orders/${id}`);
+      if (response.data.success) {
+        const raw = response.data.data;
+        setOrder(raw?.order || raw);
       }
-    };
-
-    fetchOrder();
+    } catch (err) {
+      console.error('Failed to fetch order:', err);
+      toast.error('Failed to load order details');
+    } finally {
+      if (!quiet) setIsLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchOrder();
+  }, [fetchOrder]);
 
   // Fetch staff list for assignment dropdown
   useEffect(() => {
@@ -323,7 +328,6 @@ export default function OrderDetailPage() {
   const customer = order.customer;
   const pricing = order.pricing || {};
   const payment = order.payment || {};
-  const items = order.items || [];
   const statusHistory = order.statusHistory || [];
 
   // For cancelled orders: derive the status the order had just before cancellation
@@ -456,13 +460,13 @@ export default function OrderDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                Order Items
+                Order Items &amp; Garments
               </CardTitle>
             </CardHeader>
             <CardContent>
               {(order.addons || []).length > 0 && (
                 <div className="mb-4 pb-4 border-b">
-                  <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">Add-ons</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-primary mb-2">Order add-ons</p>
                   <div className="rounded-lg border divide-y">
                     {(order.addons as any[]).map((addon: any, idx: number) => (
                       <div key={idx} className="flex items-center justify-between px-4 py-2.5">
@@ -475,55 +479,18 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               )}
-              {items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No items</p>
-              ) : (() => {
-                // Build group key: "Service Name — Type" e.g. "Washing — Wash & Iron"
-                const buildGroupKey = (item: any) => {
-                  const svcType = SERVICE_LABELS[item.serviceType] ?? null;
-                  if (item.serviceName && svcType && item.serviceName !== svcType) {
-                    return `${item.serviceName} — ${svcType}`;
-                  }
-                  return item.serviceName || svcType || (item.serviceType && item.serviceType !== 'laundry' ? item.serviceType.replace(/-/g, ' ') : null) || 'Laundry';
-                };
-                const groups = new Map<string, any[]>();
-                items.forEach((item: any) => {
-                  const key = buildGroupKey(item);
-                  if (!groups.has(key)) groups.set(key, []);
-                  groups.get(key)!.push(item);
-                });
-                return (
-                  <div className="space-y-5">
-                    {Array.from(groups.entries()).map(([groupName, groupItems]) => (
-                      <div key={groupName}>
-                        {/* Service group header */}
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-primary">{groupName}</span>
-                          <div className="flex-1 h-px bg-border" />
-                          <span className="text-xs text-muted-foreground">{groupItems.reduce((s: number, i: any) => s + (i.quantity || 1), 0)} pc(s)</span>
-                        </div>
-                        {/* Items under this service */}
-                        <div className="rounded-lg border divide-y">
-                          {groupItems.map((item: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between px-4 py-3">
-                              <div className="min-w-0">
-                                <div className="font-medium">{item.itemType || '—'}</div>
-                                {item.condition && (
-                                  <div className="text-xs text-muted-foreground mt-0.5">Condition: {item.condition}</div>
-                                )}
-                              </div>
-                              <div className="text-right shrink-0 ml-4">
-                                <div className="font-semibold">₦{((item.unitPrice ?? 0) * (item.quantity ?? 1)).toLocaleString()}</div>
-                                <div className="text-xs text-muted-foreground">₦{(item.unitPrice ?? 0).toLocaleString()} × {item.quantity ?? 1}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
+              <OrderGarmentsPanel
+                order={order}
+                canManage={canManageGarments(role)}
+                onChanged={() => fetchOrder(true)}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Internal staff handover notes — quick access, not buried in a settings tab */}
+          <Card>
+            <CardContent className="pt-6">
+              <OrderNotesPanel orderId={id!} items={order.items} />
             </CardContent>
           </Card>
 
