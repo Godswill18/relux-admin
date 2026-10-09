@@ -114,11 +114,11 @@ interface PermissionGroupProps {
   group: string;
   permissions: Permission[];
   draft: Set<string>;
-  locked: boolean;
+  isLocked: (perm: string) => boolean;
   onToggle: (perm: string) => void;
 }
 
-function PermissionGroup({ group, permissions, draft, locked, onToggle }: PermissionGroupProps) {
+function PermissionGroup({ group, permissions, draft, isLocked, onToggle }: PermissionGroupProps) {
   const [open, setOpen] = useState(true);
   const checkedCount = permissions.filter((p) => draft.has(p)).length;
 
@@ -140,7 +140,9 @@ function PermissionGroup({ group, permissions, draft, locked, onToggle }: Permis
 
       {open && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 p-4">
-          {permissions.map((perm) => (
+          {permissions.map((perm) => {
+            const locked = isLocked(perm);
+            return (
             <label
               key={perm}
               className={cn(
@@ -155,7 +157,8 @@ function PermissionGroup({ group, permissions, draft, locked, onToggle }: Permis
               />
               <span>{PERMISSION_LABELS[perm]}</span>
             </label>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -195,6 +198,9 @@ export function RolesPermissionsTab() {
 
   const selectedRole = roles.find((r) => r._id === selectedId) ?? null;
   const isAdmin = selectedRole?.name === 'admin';
+  const isDeveloper = currentUser?.role?.toLowerCase() === 'developer';
+  // The Service SLA permission is the Superadmin's to give or take away — for every role.
+  // The admin role is otherwise locked, so for admin it is the only editable box.
   const isDirty =
     selectedRole !== null &&
     JSON.stringify([...draft].sort()) !== JSON.stringify([...selectedRole.permissions].sort());
@@ -328,6 +334,7 @@ export function RolesPermissionsTab() {
         <PermissionsPanel
           selectedRole={selectedRole}
           isAdmin={isAdmin}
+          isDeveloper={isDeveloper}
           isDirty={isDirty}
           isSaving={isSaving}
           draft={draft}
@@ -344,6 +351,7 @@ export function RolesPermissionsTab() {
         <PermissionsPanel
           selectedRole={selectedRole}
           isAdmin={isAdmin}
+          isDeveloper={isDeveloper}
           isDirty={isDirty}
           isSaving={isSaving}
           draft={draft}
@@ -405,6 +413,7 @@ export function RolesPermissionsTab() {
 interface PermissionsPanelProps {
   selectedRole: RoleDoc | null;
   isAdmin: boolean;
+  isDeveloper: boolean;
   isDirty: boolean;
   isSaving: boolean;
   draft: Set<string>;
@@ -418,6 +427,7 @@ interface PermissionsPanelProps {
 function PermissionsPanel({
   selectedRole,
   isAdmin,
+  isDeveloper,
   isDirty,
   isSaving,
   draft,
@@ -435,6 +445,10 @@ function PermissionsPanel({
     );
   }
 
+  // The Service SLA permission is the Superadmin's to give or take away, for every
+  // role. The admin role is otherwise locked, so for admin it is the only editable box.
+  const isLocked = (perm: string) => (perm === 'MANAGE_SERVICE_SLA' ? !isDeveloper : isAdmin);
+
   return (
     <div className="flex-1 min-w-0 space-y-4">
       {/* Header */}
@@ -446,7 +460,7 @@ function PermissionsPanel({
           </h3>
           {isAdmin ? (
             <p className="text-sm text-muted-foreground mt-0.5">
-              Admin role always has all permissions and cannot be modified.
+              Admin role is locked. Only the Superadmin can grant it the Service SLA permission.
             </p>
           ) : (
             <p className="text-sm text-muted-foreground mt-0.5">
@@ -455,7 +469,7 @@ function PermissionsPanel({
           )}
         </div>
 
-        {!isAdmin && (
+        {(!isAdmin || isDeveloper) && (
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
             {isDirty && (
               <span className="text-xs text-orange-500 flex items-center gap-1">
@@ -480,7 +494,7 @@ function PermissionsPanel({
             group={group}
             permissions={perms}
             draft={draft}
-            locked={isAdmin}
+            isLocked={isLocked}
             onToggle={onToggle}
           />
         ))}

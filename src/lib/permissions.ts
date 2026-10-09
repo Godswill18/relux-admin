@@ -133,6 +133,7 @@ export const PERMISSION_GROUPS = {
     Permission.VIEW_SERVICES,
     Permission.MANAGE_SERVICES,
     Permission.MANAGE_PRICING,
+    Permission.MANAGE_SERVICE_SLA,
   ],
 
   'Payment Management': [
@@ -211,6 +212,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   [Permission.VIEW_SERVICES]: 'View Services',
   [Permission.MANAGE_SERVICES]: 'Manage Services',
   [Permission.MANAGE_PRICING]: 'Manage Pricing',
+  [Permission.MANAGE_SERVICE_SLA]: 'Set Service Processing Times (SLA)',
 
   [Permission.VIEW_PAYMENTS]: 'View Payments',
   [Permission.CONFIRM_PAYMENT]: 'Confirm Payments',

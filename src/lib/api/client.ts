@@ -3,6 +3,7 @@
 // ============================================================================
 
 import axios from 'axios';
+import { syncFromBody, startClockReconcile } from '@/lib/sla';
 
 // Backend API base URL
 export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
@@ -44,7 +45,8 @@ apiClient.interceptors.request.use(
 // Response interceptor - Handle errors and token refresh
 apiClient.interceptors.response.use(
   (response) => {
-    // Return the response data directly
+    // Learn the server clock from any response that carries it (SLA timers)
+    syncFromBody(response.data);
     return response;
   },
   async (error) => {
@@ -108,5 +110,8 @@ apiClient.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// Keep the server-clock offset fresh (SLA timers use server time, not the device clock)
+startClockReconcile(`${API_BASE_URL.replace(/\/api\/v1\/?$/, '')}/health`);
 
 export default apiClient;

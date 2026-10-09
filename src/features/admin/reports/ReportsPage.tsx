@@ -2,6 +2,7 @@
 // REPORTS PAGE - Reports & Analytics
 // ============================================================================
 
+import { SlaPerformance } from './charts/SlaPerformance';
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -175,6 +176,15 @@ export default function ReportsPage() {
               </CardHeader>
               <CardContent>
                 <GarmentSummary />
+              </CardContent>
+            </Card>
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Processing time (SLA)</CardTitle>
+                <CardDescription>Orders finished in the last 30 days, by service level, against the time promised when they were confirmed</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <SlaPerformance />
               </CardContent>
             </Card>
           </div>

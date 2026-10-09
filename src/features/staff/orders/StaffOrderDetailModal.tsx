@@ -32,7 +32,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { PriorityBadge } from '@/components/shared/StatusBadges';
-import { CountdownBadge } from '@/components/shared/CountdownBadge';
+import { OrderTimerAuto } from '@/components/shared/OrderTimer';
 import { OrderGarmentsPanel, canManageGarments } from '@/components/orders/OrderGarmentsPanel';
 import { OrderNotesPanel } from '@/components/orders/OrderNotesPanel';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -193,14 +193,7 @@ export function StaffOrderDetailModal({ order: listOrder, open, onOpenChange, on
           <div className="space-y-1 pb-2">
 
             {/* ── Stage Countdown Timer ────────────────────────────────── */}
-            {order.stageDeadlineAt && (
-              <CountdownBadge
-                stageDeadlineAt={order.stageDeadlineAt}
-                stageDurationMinutes={order.stageDurationMinutes}
-                variant="full"
-                className="mb-2"
-              />
-            )}
+            <OrderTimerAuto order={order} variant="full" className="mb-2" />
 
             {/* ── Customer ───────────────────────────────────────────────── */}
             <Section title="Customer" />

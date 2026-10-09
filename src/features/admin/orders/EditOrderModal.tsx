@@ -193,6 +193,13 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   const selectedLevel = activeLevels.find((lvl: any) => (lvl.id || lvl._id) === watchServiceLevId);
   const levelPct      = selectedLevel?.percentageAdjustment ?? 0;
 
+  // After confirmation the service level is also the customer's promised
+  // completion time, so changing it needs a reason (the server enforces this
+  // and recalculates the deadline from the original confirmation time).
+  const [levelChangeReason, setLevelChangeReason] = useState('');
+  const levelChangedAfterConfirm =
+    !!order?.confirmedAt && !!watchServiceLevId && watchServiceLevId !== (computedValues?.serviceLevelId || '');
+
   const { serviceTotal: subtotal, lineAddonsTotal, garments } = draftTotals(lines, catalogue, addons);
   const pickupFee       = watchOrderType === 'pickup-delivery' ? 500 : 0;
   const deliveryFee     = watchOrderType === 'pickup-delivery' ? 500 : 0;
@@ -235,6 +242,11 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
       return;
     }
 
+    if (levelChangedAfterConfirm && !levelChangeReason.trim()) {
+      toast.error('Give a reason for changing the service level on a confirmed order');
+      return;
+    }
+
     const orderId = order._id || order.id;
 
     try {
@@ -256,6 +268,7 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
         deliveryFee,
         addons:  selectedAddonIds.map((id) => ({ addonId: id })),
         editNote: data.editNote || undefined,
+        ...(levelChangedAfterConfirm ? { serviceLevelChangeReason: levelChangeReason.trim() } : {}),
         pricing: {
           subtotal,
           pickupFee,
@@ -477,6 +490,24 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
               )}
             />
           </div>
+
+          {levelChangedAfterConfirm && (
+            <div className="space-y-1.5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-800">
+              <p className="text-sm font-medium">This order is already confirmed.</p>
+              <p className="text-xs">
+                Changing its service level changes the price and recalculates the promised completion time from when it
+                was confirmed. The change is recorded with your reason.
+              </p>
+              <Textarea
+                value={levelChangeReason}
+                onChange={(e) => setLevelChangeReason(e.target.value)}
+                placeholder="Reason for changing the service level (required)"
+                maxLength={500}
+                rows={2}
+                className="bg-white"
+              />
+            </div>
+          )}
 
           <Separator />
 

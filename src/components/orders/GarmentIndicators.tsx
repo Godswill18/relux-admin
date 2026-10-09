@@ -3,11 +3,22 @@
 // are. Each chip filters the order list (GET /orders?fulfilment=…).
 // ============================================================================
 
-import { PackageCheck, Layers, PackageOpen } from 'lucide-react';
+import { PackageCheck, Layers, PackageOpen, AlertTriangle, Clock } from 'lucide-react';
 
-export type GarmentFilter = '' | 'ready_for_collection' | 'partially_ready' | 'partially_collected';
+export type GarmentFilter =
+  | '' | 'ready_for_collection' | 'partially_ready' | 'partially_collected' | 'sla_overdue' | 'sla_due_soon';
+
+/** Query params for a chip — the SLA chips filter on ?sla=, the rest on ?fulfilment=. */
+export function filterParams(filter: GarmentFilter): Record<string, string> {
+  if (!filter) return {};
+  if (filter === 'sla_overdue') return { sla: 'overdue' };
+  if (filter === 'sla_due_soon') return { sla: 'due_soon' };
+  return { fulfilment: filter };
+}
 
 export interface GarmentStats {
+  slaOverdue?: number;
+  slaDueSoon?: number;
   partiallyReady: number;
   readyForCollection: number;
   partiallyCollected: number;
@@ -20,6 +31,8 @@ export const GARMENT_FILTER_LABELS: Record<Exclude<GarmentFilter, ''>, string> =
   ready_for_collection: 'Ready for collection',
   partially_ready: 'Partially ready',
   partially_collected: 'Partially collected',
+  sla_overdue: 'Overdue',
+  sla_due_soon: 'Due soon',
 };
 
 /** Split a counts response into the per-status numbers and the garment stats. */
@@ -46,6 +59,10 @@ export function GarmentIndicators({ stats, active, onSelect }: {
       hint: 'rest still to be collected',
     },
   ];
+  chips.unshift(
+    { key: 'sla_overdue', count: stats.slaOverdue ?? 0, Icon: AlertTriangle, hint: 'past their processing deadline' },
+    { key: 'sla_due_soon', count: stats.slaDueSoon ?? 0, Icon: Clock, hint: 'close to their deadline' },
+  );
   return (
     <div className="flex flex-wrap gap-2">
       {chips.map(({ key, count, hint, Icon }) => {

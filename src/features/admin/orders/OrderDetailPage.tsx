@@ -30,7 +30,7 @@ import {
 import { OrderReceiptModal } from './OrderReceiptModal';
 import { EditOrderModal } from './EditOrderModal';
 import { CancelOrderModal } from './CancelOrderModal';
-import { CountdownBadge } from '@/components/shared/CountdownBadge';
+import { OrderTimerAuto } from '@/components/shared/OrderTimer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -163,7 +163,12 @@ export default function OrderDetailPage() {
       );
     };
     socket.on('order:timer-updated', handler);
-    return () => { socket.off('order:timer-updated', handler); };
+    const slaHandler = (data: { orderId: string; sla: any }) => {
+      if (data.orderId !== id) return;
+      setOrder((prev: any) => (prev ? { ...prev, sla: data.sla, confirmedAt: prev.confirmedAt || data.sla?.confirmedAt } : prev));
+    };
+    socket.on('order:sla-updated', slaHandler);
+    return () => { socket.off('order:timer-updated', handler); socket.off('order:sla-updated', slaHandler); };
   }, [id]);
 
   // Fetch customer wallet balance for partial or wallet/pay-later unpaid orders
@@ -826,13 +831,7 @@ export default function OrderDetailPage() {
         {/* Right Column - Sidebar */}
         <div className="space-y-6">
           {/* Stage Countdown Timer */}
-          {order.stageDeadlineAt && (
-            <CountdownBadge
-              stageDeadlineAt={order.stageDeadlineAt}
-              stageDurationMinutes={order.stageDurationMinutes}
-              variant="full"
-            />
-          )}
+          <OrderTimerAuto order={order} variant="full" />
 
           {/* Order Info */}
           <Card>

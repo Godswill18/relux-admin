@@ -19,7 +19,7 @@ import { EditOrderModal } from './EditOrderModal';
 import { AssignStaffModal } from './AssignStaffModal';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
-import { CountdownBadge } from '@/components/shared/CountdownBadge';
+import { OrderTimerAuto } from '@/components/shared/OrderTimer';
 import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable';
 import { SwipeableCard } from '@/components/shared/SwipeableCard';
 import { Button } from '@/components/ui/button';
@@ -29,7 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import { GarmentProgressBadge } from '@/components/orders/OrderGarmentsPanel';
 import {
-  GarmentIndicators, GARMENT_FILTER_LABELS, splitCounts, type GarmentFilter, type GarmentStats,
+  GarmentIndicators, GARMENT_FILTER_LABELS, filterParams, splitCounts, type GarmentFilter, type GarmentStats,
 } from '@/components/orders/GarmentIndicators';
 import { garmentCount, lineServiceLabel } from '@/lib/orderLines';
 import {
@@ -196,7 +196,14 @@ export default function OrdersPage() {
       );
     };
     socket.on('order:timer-updated', handler);
-    return () => { socket.off('order:timer-updated', handler); };
+    // SLA changes only on confirmation / ready / edit — patch the order in place
+    const slaHandler = (data: { orderId: string; sla: any }) => {
+      setOrders((prev) =>
+        prev.map((o) => ((o._id === data.orderId || o.id === data.orderId) ? { ...o, sla: data.sla, confirmedAt: o.confirmedAt || data.sla?.confirmedAt } : o))
+      );
+    };
+    socket.on('order:sla-updated', slaHandler);
+    return () => { socket.off('order:timer-updated', handler); socket.off('order:sla-updated', slaHandler); };
   }, []);
 
   // ── Fetch orders for active tab ──────────────────────────────────────────
@@ -232,7 +239,7 @@ export default function OrdersPage() {
       try {
         const params: Record<string, string> = { limit: garmentFilter ? '100' : '50' };
         if (q) params.search = q;
-        if (garmentFilter) params.fulfilment = garmentFilter;
+        if (garmentFilter) Object.assign(params, filterParams(garmentFilter));
         const res = await apiClient.get('/orders', { params });
         const raw = res.data?.data;
         setSearchResults(Array.isArray(raw) ? raw : raw?.orders ?? []);
@@ -380,11 +387,7 @@ export default function OrdersPage() {
       id: 'timer',
       header: 'Timer',
       cell: ({ row }) => (
-        <CountdownBadge
-          stageDeadlineAt={row.original.stageDeadlineAt}
-          stageDurationMinutes={row.original.stageDurationMinutes}
-          variant="compact"
-        />
+        <OrderTimerAuto order={row.original} variant="compact" />
       ),
     },
     {
@@ -802,13 +805,7 @@ function AdminMobileCard({ order, canEdit, canAssign, canDelete, showComplete, o
           </div>
         )}
 
-        {order.stageDeadlineAt && (
-          <CountdownBadge
-            stageDeadlineAt={order.stageDeadlineAt}
-            stageDurationMinutes={order.stageDurationMinutes}
-            variant="compact"
-          />
-        )}
+        <OrderTimerAuto order={order} variant="compact" />
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
