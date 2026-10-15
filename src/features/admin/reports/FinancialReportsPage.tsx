@@ -20,6 +20,13 @@ const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString('en-NG', { t
 
 interface Summary {
   period: { year: number; month: number };
+  revenue: {
+    definition: string; total: number; orders: number; averageOrder: number;
+    daily: { date: string; revenue: number; orders: number }[];
+    methods: { method: string; revenue: number; orders: number }[];
+    serviceLevels: { level: string; revenue: number; orders: number }[];
+    integrity: { ledgerMismatchOrders: number; ledgerMismatchAmount: number; estimatedDateOrders: number };
+  };
   financial: {
     grossCollected: number; refunds: number; netCollected: number; paymentTransactions: number; paidOrders: number;
     methods: { method: string; collected: number; refunds: number; net: number; transactions: number }[];
@@ -34,11 +41,12 @@ interface Summary {
   };
   outstanding: { orders: number; outstandingBalance: number; partial: number };
   unrecordedRefunds: { orders: number; amount: number };
-  reconciliation: { ok: boolean };
+  reconciliation: { ok: boolean; revenue: { ok: boolean }; payments: { ok: boolean } };
 }
-interface PaidRow {
-  orderId: string; orderNumber: string; customer: { name: string; phone: string }; orderDate: string; paidDate: string;
-  total: number; paidThisMonth: number; paidToDate: number; outstanding: number; methods: string[]; paymentState: string; orderStatus: string;
+interface RevenueRow {
+  orderId: string; orderNumber: string; customer: { name: string; phone: string }; orderDate: string;
+  orderStatus: string; paidAt: string | null; revenueAt: string; amount: number; method: string;
+  serviceLevel: string; ledgerMismatch: boolean;
 }
 interface OutRow {
   orderId: string; orderNumber: string; customer: { name: string; phone: string }; orderDate: string; total: number;
@@ -88,8 +96,8 @@ export default function FinancialReportsPage() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [trend, setTrend] = useState<{ month: string; net: number }[]>([]);
-  const [paid, setPaid] = useState<Paged<PaidRow> | null>(null);
+  const [trend, setTrend] = useState<{ month: string; revenue: number; net: number }[]>([]);
+  const [paid, setPaid] = useState<Paged<RevenueRow> | null>(null);
   const [out, setOut] = useState<Paged<OutRow> | null>(null);
   const [paidPage, setPaidPage] = useState(1);
   const [outPage, setOutPage] = useState(1);
@@ -113,7 +121,7 @@ export default function FinancialReportsPage() {
 
   const loadPaid = useCallback(async () => {
     try {
-      const r = await apiClient.get(`/reports/financial/paid-orders?${q}&page=${paidPage}&limit=15&search=${encodeURIComponent(paidSearch)}`);
+      const r = await apiClient.get(`/reports/financial/revenue-orders?${q}&page=${paidPage}&limit=15&search=${encodeURIComponent(paidSearch)}`);
       setPaid(r.data.data);
     } catch (e) { setError(errMsg(e)); }
   }, [q, paidPage, paidSearch]);
@@ -146,7 +154,7 @@ export default function FinancialReportsPage() {
     } catch (e) { setError(errMsg(e)); }
   };
 
-  const daily = useMemo(() => (summary?.financial.daily || []).map((d) => ({ day: Number(d.date.slice(8)), collected: d.collected })), [summary]);
+  const daily = useMemo(() => (summary?.revenue.daily || []).map((d) => ({ day: Number(d.date.slice(8)), revenue: d.revenue })), [summary]);
   const years = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
 
   if (error && !summary) {
@@ -161,7 +169,7 @@ export default function FinancialReportsPage() {
     );
   }
 
-  const f = summary?.financial; const o = summary?.orders;
+  const f = summary?.financial; const o = summary?.orders; const rv = summary?.revenue;
 
   return (
     <div className="space-y-6">
@@ -186,17 +194,43 @@ export default function FinancialReportsPage() {
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      {/* FINANCIAL PERFORMANCE — by payment date */}
+      {/* REVENUE — paid orders, any status except cancelled */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-lg font-semibold">Financial performance</h2>
-          <p className="text-xs text-muted-foreground">Money received in {MONTHS[month - 1]} {year} — based on payment date</p>
+          <h2 className="text-lg font-semibold">Revenue — {MONTHS[month - 1]} {year}</h2>
+          <p className="text-xs text-muted-foreground">
+            Orders with payment status <strong>Paid</strong>, in any order status except <strong>Cancelled</strong>, at the order total, dated by payment date (WAT).
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Stat loading={loading} label="Monthly revenue" value={money(rv?.total ?? 0)} tone="text-green-600 dark:text-green-400" sub="paid orders, excluding cancelled" />
+          <Stat loading={loading} label="Revenue orders" value={String(rv?.orders ?? 0)} />
+          <Stat loading={loading} label="Average order" value={money(rv?.averageOrder ?? 0)} />
+        </div>
+        {summary && summary.revenue.integrity.ledgerMismatchOrders > 0 && (
+          <p className="text-sm text-amber-600">
+            {summary.revenue.integrity.ledgerMismatchOrders} revenue order(s) are marked Paid but the payment records show a different amount received
+            ({money(summary.revenue.integrity.ledgerMismatchAmount)} difference). They are counted at the order total; please review them.
+          </p>
+        )}
+        {summary && summary.revenue.integrity.estimatedDateOrders > 0 && (
+          <p className="text-xs text-muted-foreground">
+            {summary.revenue.integrity.estimatedDateOrders} paid order(s) have no recorded payment date; their order date was used.
+          </p>
+        )}
+      </section>
+
+      {/* PAYMENTS RECEIVED — cash view, by payment date */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold">Payments received</h2>
+          <p className="text-xs text-muted-foreground">Ledger view — every payment transaction received in {MONTHS[month - 1]} {year}, including part-payments on orders not yet fully paid. For reconciliation only; not the revenue figure.</p>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat loading={loading} label="Collected revenue" value={money(f?.grossCollected ?? 0)} tone="text-green-600 dark:text-green-400" sub={`${f?.paymentTransactions ?? 0} payments`} />
+          <Stat loading={loading} label="Received" value={money(f?.grossCollected ?? 0)} sub={`${f?.paymentTransactions ?? 0} payments`} />
           <Stat loading={loading} label="Refunds" value={money(f?.refunds ?? 0)} tone="text-red-600 dark:text-red-400" />
-          <Stat loading={loading} label="Net collected" value={money(f?.netCollected ?? 0)} />
-          <Stat loading={loading} label="Orders paid into" value={String(f?.paidOrders ?? 0)} sub="orders that received money this month" />
+          <Stat loading={loading} label="Net received" value={money(f?.netCollected ?? 0)} />
+          <Stat loading={loading} label="Orders paid into" value={String(f?.paidOrders ?? 0)} />
         </div>
         {summary && !summary.reconciliation.ok && (
           <p className="text-sm text-amber-600">Reconciliation check failed — totals on this page do not agree. Do not rely on them.</p>
@@ -224,7 +258,7 @@ export default function FinancialReportsPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>Daily collected revenue</CardTitle><CardDescription>By payment date</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Daily revenue</CardTitle><CardDescription>Paid orders (excluding cancelled), by payment date</CardDescription></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-64 w-full" /> : (
               <ResponsiveContainer width="100%" height={260}>
@@ -232,15 +266,15 @@ export default function FinancialReportsPage() {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="day" className="text-xs" />
                   <YAxis className="text-xs" tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => [money(v), 'Collected']} labelFormatter={(d) => `Day ${d}`} />
-                  <Bar dataKey="collected" fill="#22c55e" radius={[3, 3, 0, 0]} />
+                  <Tooltip formatter={(v: number) => [money(v), 'Revenue']} labelFormatter={(d) => `Day ${d}`} />
+                  <Bar dataKey="revenue" fill="#22c55e" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>12-month trend</CardTitle><CardDescription>Net collected per payment month</CardDescription></CardHeader>
+          <CardHeader><CardTitle>12-month revenue</CardTitle><CardDescription>Paid orders (excluding cancelled) per month</CardDescription></CardHeader>
           <CardContent>
             {loading ? <Skeleton className="h-64 w-full" /> : (
               <ResponsiveContainer width="100%" height={260}>
@@ -248,8 +282,8 @@ export default function FinancialReportsPage() {
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis dataKey="month" className="text-xs" tickFormatter={(m: string) => MONTHS[Number(m.slice(5)) - 1].slice(0, 3)} />
                   <YAxis className="text-xs" tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => [money(v), 'Net collected']} />
-                  <Bar dataKey="net" fill="#06b6d4" radius={[3, 3, 0, 0]} />
+                  <Tooltip formatter={(v: number) => [money(v), 'Revenue']} />
+                  <Bar dataKey="revenue" fill="#06b6d4" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -259,67 +293,68 @@ export default function FinancialReportsPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader><CardTitle>Payment methods</CardTitle><CardDescription>Collected by payment date</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Revenue by payment method</CardTitle><CardDescription>Method recorded on each revenue order</CardDescription></CardHeader>
           <CardContent className="space-y-2">
-            {loading ? <Skeleton className="h-24 w-full" /> : (f?.methods.length ? f.methods.map((m) => (
+            {loading ? <Skeleton className="h-24 w-full" /> : (rv?.methods.length ? rv.methods.map((m) => (
               <div key={m.method} className="flex items-center justify-between text-sm">
-                <span className="capitalize">{m.method} <span className="text-muted-foreground">({m.transactions})</span></span>
-                <span>{money(m.net)}{m.refunds > 0 && <span className="ml-2 text-xs text-red-500">−{money(m.refunds)} refunded</span>}</span>
+                <span className="capitalize">{m.method} <span className="text-muted-foreground">({m.orders})</span></span>
+                <span>{money(m.revenue)}</span>
               </div>
-            )) : <p className="text-sm text-muted-foreground">No payments this month.</p>)}
+            )) : <p className="text-sm text-muted-foreground">No revenue this month.</p>)}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Service levels</CardTitle><CardDescription>Order value and collected, using each order's own snapshot</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Revenue by service level</CardTitle><CardDescription>Using each order's own service-level snapshot</CardDescription></CardHeader>
           <CardContent className="space-y-2">
-            {loading ? <Skeleton className="h-24 w-full" /> : (o?.serviceLevels.length ? o.serviceLevels.map((l) => (
+            {loading ? <Skeleton className="h-24 w-full" /> : (rv?.serviceLevels.length ? rv.serviceLevels.map((l) => (
               <div key={l.level} className="flex items-center justify-between text-sm">
                 <span>{l.level} <span className="text-muted-foreground">({l.orders})</span></span>
-                <span>{money(l.value)} · paid {money(l.paid)}</span>
+                <span>{money(l.revenue)}</span>
               </div>
-            )) : <p className="text-sm text-muted-foreground">No orders this month.</p>)}
+            )) : <p className="text-sm text-muted-foreground">No revenue this month.</p>)}
           </CardContent>
         </Card>
       </div>
 
-      {/* PAID ORDERS */}
+      {/* REVENUE ORDERS */}
       <Card>
         <CardHeader>
-          <CardTitle>Paid orders</CardTitle>
-          <CardDescription>Orders that received payment in {MONTHS[month - 1]} {year}</CardDescription>
+          <CardTitle>Revenue orders</CardTitle>
+          <CardDescription>Paid orders (excluding cancelled) counted in {MONTHS[month - 1]} {year}</CardDescription>
           <Input placeholder="Search order, customer, phone…" value={paidSearch} onChange={(e) => setPaidSearch(e.target.value)} className="max-w-sm" />
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-sm">
               <thead><tr className="border-b text-left text-xs uppercase text-muted-foreground">
-                <th className="py-2 pr-3">Order</th><th className="pr-3">Customer</th><th className="pr-3">Order date</th><th className="pr-3">Paid date</th>
-                <th className="pr-3 text-right">Order total</th><th className="pr-3 text-right">Paid this month</th><th className="pr-3 text-right">Balance</th>
-                <th className="pr-3">Method</th><th className="pr-3">Payment</th><th>Order status</th>
+                <th className="py-2 pr-3">Order</th><th className="pr-3">Customer</th><th className="pr-3">Order date</th>
+                <th className="pr-3">Order status</th><th className="pr-3">Paid</th><th className="pr-3">Service level</th>
+                <th className="pr-3">Method</th><th className="text-right">Amount</th>
               </tr></thead>
               <tbody>
                 {(paid?.rows || []).map((r) => (
                   <tr key={r.orderId} className="border-b last:border-0">
-                    <td className="py-2 pr-3 font-medium">{r.orderNumber}</td>
+                    <td className="py-2 pr-3 font-medium">
+                      {r.orderNumber}
+                      {r.ledgerMismatch && <Badge variant="outline" className="ml-2 border-0 bg-amber-500/15 text-amber-600">Check payment</Badge>}
+                    </td>
                     <td className="pr-3">{r.customer.name}</td>
                     <td className="pr-3">{fmtDate(r.orderDate)}</td>
-                    <td className="pr-3">{fmtDate(r.paidDate)}</td>
-                    <td className="pr-3 text-right">{money(r.total)}</td>
-                    <td className="pr-3 text-right text-green-600 dark:text-green-400">{money(r.paidThisMonth)}</td>
-                    <td className="pr-3 text-right">{money(r.outstanding)}</td>
-                    <td className="pr-3 capitalize">{r.methods.join(', ')}</td>
-                    <td className="pr-3"><StateBadge state={r.paymentState} /></td>
-                    <td className="capitalize">{r.orderStatus.replace(/[-_]/g, ' ')}</td>
+                    <td className="pr-3 capitalize">{r.orderStatus.replace(/[-_]/g, ' ')}</td>
+                    <td className="pr-3">{fmtDate(r.paidAt || undefined)}</td>
+                    <td className="pr-3">{r.serviceLevel}</td>
+                    <td className="pr-3 capitalize">{r.method}</td>
+                    <td className="text-right text-green-600 dark:text-green-400">{money(r.amount)}</td>
                   </tr>
                 ))}
-                {paid && paid.rows.length === 0 && <tr><td colSpan={10} className="py-6 text-center text-muted-foreground">No payments found.</td></tr>}
+                {paid && paid.rows.length === 0 && <tr><td colSpan={8} className="py-6 text-center text-muted-foreground">No revenue orders found.</td></tr>}
               </tbody>
             </table>
           </div>
           {paid && (
             <>
               <div className="mt-3 flex justify-between border-t pt-3 text-sm font-medium">
-                <span>Total paid orders: {paid.totals.orders}</span><span>Total collected: {money(paid.totals.collected)}</span>
+                <span>Revenue orders: {paid.totals.orders}</span><span>Total revenue: {money(paid.totals.revenue)}</span>
               </div>
               <PagerFooter page={paid.page} pages={paid.pages} onPage={setPaidPage} />
             </>
