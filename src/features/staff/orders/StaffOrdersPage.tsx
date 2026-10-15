@@ -5,6 +5,7 @@
 // Badge counts are staff-specific, fetched on load + every 30s + via socket
 // ============================================================================
 
+import { type OrderStatus, NEXT_STATUS as NEXT_STATUS_BASE, PREV_STATUS as PREV_STATUS_BASE } from '@/lib/orderStatus';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
 import { useNavigate } from 'react-router-dom';
@@ -55,10 +56,7 @@ const SERVICE_LABELS: Record<string, string> = {
   'dry-clean': 'Dry Clean',
 };
 
-type StatusKey =
-  | 'pending' | 'confirmed' | 'picked-up' | 'in_progress'
-  | 'washing' | 'ironing' | 'ready' | 'out-for-delivery'
-  | 'delivered' | 'completed' | 'cancelled';
+type StatusKey = OrderStatus;
 
 // ── Created By Badge ────────────────────────────────────────────────────────
 function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
@@ -87,52 +85,26 @@ function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
 }
 
 // Forward-progression map for "Next Step" button
-const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = {
-  'confirmed':        'picked-up',
-  'picked-up':        'in_progress',
-  'in_progress':      'washing',
-  'washing':          'ironing',
-  'ironing':          'ready',
-  'ready':            'out-for-delivery',
-  'out-for-delivery': 'delivered',
-  'delivered':        'completed',
-};
+// Forward/back steps come from lib/orderStatus.ts (one definition).
+const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = NEXT_STATUS_BASE;
 
 // Staff prev-status: confirmed is the floor (cannot go back to pending / unassign)
-const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = {
-  'picked-up':        'confirmed',
-  'in_progress':      'picked-up',
-  'washing':          'in_progress',
-  'ironing':          'washing',
-  'ready':            'ironing',
-  'out-for-delivery': 'ready',
-  'delivered':        'out-for-delivery',
-  'completed':        'delivered',
-};
+// Staff cannot step back past confirmed (no un-assigning to pending).
+const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = { in_progress: 'confirmed', ready: 'in_progress', completed: 'ready' };
 
 const NEXT_STATUS_LABEL: Partial<Record<StatusKey, string>> = {
-  'confirmed':        'Mark Picked Up',
-  'picked-up':        'Start Processing',
-  'in_progress':      'Start Washing',
-  'washing':          'Start Ironing',
-  'ironing':          'Mark Ready',
-  'ready':            'Send for Delivery',
-  'out-for-delivery': 'Mark Delivered',
-  'delivered':        'Mark Completed',
+  confirmed:   'Start Processing',
+  in_progress: 'Mark Ready',
+  ready:       'Mark Completed',
 };
 
 const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'pending',          label: 'Pending',          icon: <Clock className="h-3.5 w-3.5" /> },
-  { key: 'confirmed',        label: 'Confirmed',        icon: <Check className="h-3.5 w-3.5" /> },
-  { key: 'picked-up',        label: 'Picked Up',        icon: <Truck className="h-3.5 w-3.5" /> },
-  { key: 'in_progress',      label: 'In Progress',      icon: <Settings2 className="h-3.5 w-3.5" /> },
-  { key: 'washing',          label: 'Washing',          icon: <Waves className="h-3.5 w-3.5" /> },
-  { key: 'ironing',          label: 'Ironing',          icon: <Zap className="h-3.5 w-3.5" /> },
-  { key: 'ready',            label: 'Ready',            icon: <PackageCheck className="h-3.5 w-3.5" /> },
-  { key: 'out-for-delivery', label: 'Out for Delivery', icon: <Navigation className="h-3.5 w-3.5" /> },
-  { key: 'delivered',        label: 'Delivered',        icon: <Home className="h-3.5 w-3.5" /> },
-  { key: 'completed',        label: 'Completed',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-  { key: 'cancelled',        label: 'Cancelled',        icon: <XCircle className="h-3.5 w-3.5" /> },
+  { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
+  { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
+  { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
+  { key: 'ready',       label: 'Ready',       icon: <PackageCheck className="h-3.5 w-3.5" /> },
+  { key: 'completed',   label: 'Completed',   icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  { key: 'cancelled',   label: 'Cancelled',   icon: <XCircle className="h-3.5 w-3.5" /> },
 ];
 
 // ============================================================================
@@ -322,7 +294,7 @@ export default function StaffOrdersPage() {
   const myTotal   = Object.entries(counts)
     .filter(([k, v]) => k !== 'pending' && k !== 'cancelled' && typeof v === 'number')
     .reduce((s, [, v]) => s + v, 0);
-  const inProgress = (counts['washing'] ?? 0) + (counts['ironing'] ?? 0) + (counts['in_progress'] ?? 0);
+  const inProgress = (counts['in_progress'] ?? 0);
   const readyCount = counts['ready'] ?? 0;
 
   // ── Pick Order ───────────────────────────────────────────────────────────
@@ -576,7 +548,7 @@ export default function StaffOrdersPage() {
 
   function columnsForTab(key: StatusKey): ColumnDef<any>[] {
     if (key === 'pending')                                          return pendingColumns;
-    if (key === 'delivered' || key === 'completed' || key === 'cancelled') return readOnlyColumns;
+    if (key === 'completed' || key === 'cancelled') return readOnlyColumns;
     return activeColumns;
   }
 
@@ -703,7 +675,7 @@ export default function StaffOrdersPage() {
             const next = NEXT_STATUS[tabKey];
             const nextLabel = NEXT_STATUS_LABEL[tabKey];
             const isPending = tabKey === 'pending';
-            const isReadOnly = tabKey === 'delivered' || tabKey === 'completed' || tabKey === 'cancelled';
+            const isReadOnly = tabKey === 'completed' || tabKey === 'cancelled';
             return (
               <div
                 key={order._id}
@@ -970,7 +942,7 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
   const total        = order.pricing?.total ?? order.total ?? 0;
   const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
   const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
-  const isReadOnly   = tabKey === 'delivered' || tabKey === 'completed' || tabKey === 'cancelled';
+  const isReadOnly   = tabKey === 'completed' || tabKey === 'cancelled';
 
   return (
     <SwipeableCard

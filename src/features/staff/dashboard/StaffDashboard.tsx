@@ -2,6 +2,7 @@
 // STAFF DASHBOARD - Staff Overview Page
 // ============================================================================
 
+import { normalizeOrderStatus } from '@/lib/orderStatus';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GarmentIndicators, splitCounts, type GarmentStats } from '@/components/orders/GarmentIndicators';
@@ -38,22 +39,18 @@ function to12h(t: string) {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft:              'Draft',
-  pending:            'Pending',
-  confirmed:          'Confirmed',
-  in_progress:        'In Progress',
-  'picked-up':        'Picked Up',
-  washing:            'Washing',
-  ironing:            'Ironing',
-  ready:              'Ready',
-  'out-for-delivery': 'Out for Delivery',
-  delivered:          'Delivered',
-  completed:          'Completed',
-  cancelled:          'Cancelled',
+  draft:       'Draft',
+  pending:     'Pending',
+  confirmed:   'Confirmed',
+  in_progress: 'In Progress',
+  ready:       'Ready',
+  completed:   'Completed',
+  cancelled:   'Cancelled',
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const label   = STATUS_LABELS[status] ?? status;
+  const canonical = normalizeOrderStatus(status) ?? status;
+  const label   = STATUS_LABELS[canonical] ?? status;
   const variant =
     status === 'cancelled'                          ? 'destructive'
     : status === 'completed' || status === 'ready'  ? 'default'

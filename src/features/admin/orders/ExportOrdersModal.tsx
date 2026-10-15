@@ -171,13 +171,8 @@ export function ExportOrdersModal({ open, onOpenChange }: ExportOrdersModalProps
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
-                  <SelectItem value="picked-up">Picked Up</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="washing">Washing</SelectItem>
-                  <SelectItem value="ironing">Ironing</SelectItem>
                   <SelectItem value="ready">Ready</SelectItem>
-                  <SelectItem value="out-for-delivery">Out for Delivery</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>

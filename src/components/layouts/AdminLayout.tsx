@@ -36,6 +36,8 @@ import { Permission } from '@/types';
 
 interface AdminNavItem extends NavItem {
   permission?: Permission;
+  // Shown to the developer (Superadmin) role only — never by permission grant.
+  developerOnly?: boolean;
 }
 
 const ALL_ADMIN_NAV: AdminNavItem[] = [
@@ -135,6 +137,12 @@ const ALL_ADMIN_NAV: AdminNavItem[] = [
     permission: Permission.VIEW_CHAT,
   },
   {
+    label: 'Financial Reports',
+    path: '/admin/financial-reports',
+    icon: <Wallet className="h-4 w-4" />,
+    developerOnly: true,
+  },
+  {
     label: 'Reports',
     path: '/admin/reports',
     icon: <FileText className="h-4 w-4" />,
@@ -180,12 +188,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'DEVELOPER';
   const navItems: NavItem[] = useMemo(
     () =>
-      isAdmin
-        ? ALL_ADMIN_NAV
-        : ALL_ADMIN_NAV.filter(
-            (item) => !item.permission || permissions.includes(item.permission as Permission)
-          ),
-    [isAdmin, permissions]
+      ALL_ADMIN_NAV.filter((item) => !item.developerOnly || normalizedRole === 'DEVELOPER').filter(
+        (item) =>
+          isAdmin || !item.permission || permissions.includes(item.permission as Permission)
+      ),
+    [isAdmin, permissions, normalizedRole]
   );
 
   const headerTitle =

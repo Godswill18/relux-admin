@@ -30,7 +30,7 @@ import { OrderReceiptModal } from '@/features/admin/orders/OrderReceiptModal';
 
 function getDeliveredBy(order: any): string {
   const history: any[] = order.statusHistory ?? [];
-  const entry = [...history].reverse().find((h) => h.status === 'delivered');
+  const entry = [...history].reverse().find((h) => h.status === 'completed');
   return entry?.updatedBy?.name ?? '—';
 }
 
@@ -86,7 +86,7 @@ export default function StaffDeliveredOrdersPage() {
       try {
         setLoading(true);
         const res = await apiClient.get('/orders', {
-          params: { status: 'delivered', limit: 200 },
+          params: { status: 'completed', limit: 200 },
         });
         const raw = res.data?.data?.orders ?? res.data?.data ?? [];
         setOrders(Array.isArray(raw) ? raw : []);

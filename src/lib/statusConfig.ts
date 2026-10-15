@@ -4,6 +4,8 @@
 //          CustomersPage, TransactionsTab, SubscriptionsPage
 // ============================================================================
 
+import { normalizeOrderStatus } from './orderStatus';
+
 export interface StatusConfig {
   label: string;
   /** Tailwind className for badge pills */
@@ -29,35 +31,11 @@ export const ORDER_STATUS_CONFIG: Record<string, StatusConfig> = {
     className:
       'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400',
   },
-  'pending-pickup': {
-    label: 'Pending Pickup',
-    hex: '#8b5cf6',
-    className:
-      'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400',
-  },
-  'picked-up': {
-    label: 'Picked Up',
-    hex: '#8b5cf6',
-    className:
-      'bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400',
-  },
   in_progress: {
     label: 'In Progress',
-    hex: '#6366f1',
-    className:
-      'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400',
-  },
-  washing: {
-    label: 'Washing',
     hex: '#06b6d4',
     className:
       'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400',
-  },
-  ironing: {
-    label: 'Ironing',
-    hex: '#0ea5e9',
-    className:
-      'bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-900/30 dark:text-sky-400',
   },
   ready: {
     label: 'Ready',
@@ -65,23 +43,11 @@ export const ORDER_STATUS_CONFIG: Record<string, StatusConfig> = {
     className:
       'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400',
   },
-  'out-for-delivery': {
-    label: 'Out for Delivery',
-    hex: '#f97316',
-    className:
-      'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400',
-  },
-  delivered: {
-    label: 'Delivered',
-    hex: '#22c55e',
-    className:
-      'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400',
-  },
   completed: {
     label: 'Completed',
     hex: '#16a34a',
     className:
-      'bg-green-200 text-green-900 border-green-300 dark:bg-green-900/50 dark:text-green-300',
+      'bg-emerald-200 text-emerald-900 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300',
   },
   cancelled: {
     label: 'Cancelled',
@@ -105,7 +71,9 @@ export const ORDER_STATUS_FALLBACK: StatusConfig = {
 };
 
 export function getOrderStatusConfig(status: string): StatusConfig {
-  return ORDER_STATUS_CONFIG[status?.toLowerCase?.()] ?? {
+  // Retired values resolve to their canonical status (washing → In Progress …)
+  const canonical = normalizeOrderStatus(status) ?? status?.toLowerCase?.();
+  return ORDER_STATUS_CONFIG[canonical as string] ?? {
     ...ORDER_STATUS_FALLBACK,
     label: status || 'Unknown',
   };

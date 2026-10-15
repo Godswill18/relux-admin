@@ -158,7 +158,7 @@ export default function DeliveryConfirmPage() {
   const items: any[] = order?.items ?? [];
   const pricing = order?.pricing ?? {};
   const isCancelled = order?.status === 'cancelled';
-  const alreadyDelivered = ['delivered', 'completed'].includes(order?.status ?? '');
+  const alreadyDelivered = order?.status === 'completed';
   // Garments tracked and something is ready but not yet handed over — offer a
   // per-line pick instead of forcing "the whole order left" on every scan.
   const fulfilment = order ? fulfilmentOf(order) : null;

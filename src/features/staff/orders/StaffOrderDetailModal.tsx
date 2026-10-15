@@ -50,18 +50,13 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  draft:              'Draft',
-  pending:            'Pending',
-  confirmed:          'Confirmed',
-  in_progress:        'In Progress',
-  'picked-up':        'Picked Up',
-  washing:            'Washing',
-  ironing:            'Ironing',
-  ready:              'Ready for Collection',
-  'out-for-delivery': 'Out for Delivery',
-  delivered:          'Delivered',
-  completed:          'Completed',
-  cancelled:          'Cancelled',
+  draft:       'Draft',
+  pending:     'Pending',
+  confirmed:   'Confirmed',
+  in_progress: 'In Progress',
+  ready:       'Ready',
+  completed:   'Completed',
+  cancelled:   'Cancelled',
 };
 
 // ============================================================================
@@ -70,7 +65,7 @@ const STATUS_LABELS: Record<string, string> = {
 
 function statusVariant(status: string) {
   if (status === 'cancelled') return 'destructive';
-  if (status === 'completed' || status === 'delivered' || status === 'ready') return 'default';
+  if (status === 'completed' || status === 'ready') return 'default';
   return 'secondary';
 }
 

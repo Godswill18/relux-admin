@@ -32,6 +32,8 @@ import ShiftsPage from '@/features/admin/shifts/ShiftsPage';
 import PayrollPage from '@/features/admin/payroll/PayrollPage';
 import ChatPage from '@/features/admin/chat/ChatPage';
 import ReportsPage from '@/features/admin/reports/ReportsPage';
+import FinancialReportsPage from '@/features/admin/reports/FinancialReportsPage';
+import { DeveloperOnlyRoute } from '@/components/shared/DeveloperOnlyRoute';
 import AuditPage from '@/features/admin/audit/AuditPage';
 import SettingsPage from '@/features/admin/settings/SettingsPage';
 import AnnouncementsPage from '@/features/admin/announcements/AnnouncementsPage';
@@ -255,6 +257,14 @@ const App = () => (
                 <ProtectedRoute requiredPermissions={[Permission.VIEW_CHAT]}>
                   <ChatPage />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="financial-reports"
+              element={
+                <DeveloperOnlyRoute>
+                  <FinancialReportsPage />
+                </DeveloperOnlyRoute>
               }
             />
             <Route

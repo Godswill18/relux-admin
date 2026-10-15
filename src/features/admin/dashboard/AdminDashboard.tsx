@@ -185,7 +185,7 @@ export default function AdminDashboard() {
   // ---- Metric computations — use server aggregates when available ----
 
   const totalRevenue    = dashStats?.totalRevenue    ?? 0;
-  const activeOrders    = dashStats?.activeOrders    ?? safeOrders.filter((o: any) => !['completed','cancelled','delivered'].includes(o.status)).length;
+  const activeOrders    = dashStats?.activeOrders    ?? safeOrders.filter((o: any) => !['completed','cancelled'].includes(o.status)).length;
   const pendingPayments = dashStats?.pendingPayments ?? 0;
   const activeCustomers = totalCustomers             ?? safeCustomers.filter((c: any) => c.isActive !== false).length;
 

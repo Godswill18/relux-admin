@@ -381,8 +381,8 @@ export function fulfilmentOf(order: any) {
   if (order?.fulfilment) return order.fulfilment;
   const items: any[] = order?.items || [];
   const tracked = !!order?.itemTracking;
-  const readyAll = ['ready', 'out-for-delivery', 'delivered', 'completed'].includes(order?.status);
-  const collectedAll = ['delivered', 'completed'].includes(order?.status);
+  const readyAll = ['ready', 'completed'].includes(order?.status);
+  const collectedAll = order?.status === 'completed';
   const lines = items.map((i) => {
     const quantity = i.quantity || 0;
     const ready = tracked ? Math.min(i.readyQuantity || 0, quantity) : (readyAll ? quantity : 0);

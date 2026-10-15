@@ -1,7 +1,6 @@
 // ============================================================================
-// ADMIN ORDERS PAGE — 11-Status Workflow
-// Tabs: Pending · Confirmed · Picked Up · In Progress · Washing · Ironing ·
-//       Ready · Out for Delivery · Delivered · Completed · Cancelled
+// ADMIN ORDERS PAGE
+// Tabs: Pending · Confirmed · In Progress · Ready · Completed · Cancelled
 // ============================================================================
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
@@ -13,6 +12,7 @@ import {
   Clock, Check, Truck, Settings2, Waves, Zap,
   PackageCheck, Navigation, Home, XCircle, FileDown,
 } from 'lucide-react';
+import { type OrderStatus, NEXT_STATUS as NEXT_STATUS_BASE, PREV_STATUS as PREV_STATUS_BASE } from '@/lib/orderStatus';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ExportOrdersModal } from './ExportOrdersModal';
 import { EditOrderModal } from './EditOrderModal';
@@ -48,53 +48,22 @@ import socketClient from '@/lib/socket/client';
 // CONSTANTS
 // ============================================================================
 
-type StatusKey =
-  | 'pending' | 'confirmed' | 'picked-up' | 'in_progress'
-  | 'washing' | 'ironing' | 'ready' | 'out-for-delivery'
-  | 'delivered' | 'completed' | 'cancelled';
+type StatusKey = OrderStatus;
 
-const STATUS_TABS: {
-  key: StatusKey;
-  label: string;
-  icon: React.ReactNode;
-}[] = [
-  { key: 'pending',          label: 'Pending',          icon: <Clock className="h-3.5 w-3.5" /> },
-  { key: 'confirmed',        label: 'Confirmed',        icon: <Check className="h-3.5 w-3.5" /> },
-  { key: 'picked-up',        label: 'Picked Up',        icon: <Truck className="h-3.5 w-3.5" /> },
-  { key: 'in_progress',      label: 'In-Progress',      icon: <Settings2 className="h-3.5 w-3.5" /> },
-  { key: 'washing',          label: 'Washing',          icon: <Waves className="h-3.5 w-3.5" /> },
-  { key: 'ironing',          label: 'Ironing',          icon: <Zap className="h-3.5 w-3.5" /> },
-  { key: 'ready',            label: 'Ready',            icon: <PackageCheck className="h-3.5 w-3.5" /> },
-  { key: 'out-for-delivery', label: 'Out for Delivery', icon: <Navigation className="h-3.5 w-3.5" /> },
-  { key: 'delivered',        label: 'Delivered',        icon: <Home className="h-3.5 w-3.5" /> },
-  { key: 'completed',        label: 'Completed',        icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
-  { key: 'cancelled',        label: 'Cancelled',        icon: <XCircle className="h-3.5 w-3.5" /> },
+const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
+  { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
+  { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
+  { key: 'ready',       label: 'Ready',       icon: <PackageCheck className="h-3.5 w-3.5" /> },
+  { key: 'completed',   label: 'Completed',   icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+  { key: 'cancelled',   label: 'Cancelled',   icon: <XCircle className="h-3.5 w-3.5" /> },
 ];
 
 // ── Status progression maps for swipe gestures ──────────────────────────────
-const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = {
-  'pending':          'confirmed',
-  'confirmed':        'picked-up',
-  'picked-up':        'in_progress',
-  'in_progress':      'washing',
-  'washing':          'ironing',
-  'ironing':          'ready',
-  'ready':            'out-for-delivery',
-  'out-for-delivery': 'delivered',
-  'delivered':        'completed',
-};
+// Forward/back steps come from lib/orderStatus.ts (one definition).
+const NEXT_STATUS: Partial<Record<StatusKey, StatusKey>> = NEXT_STATUS_BASE;
 
-const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = {
-  'confirmed':        'pending',
-  'picked-up':        'confirmed',
-  'in_progress':      'picked-up',
-  'washing':          'in_progress',
-  'ironing':          'washing',
-  'ready':            'ironing',
-  'out-for-delivery': 'ready',
-  'delivered':        'out-for-delivery',
-  'completed':        'delivered',
-};
+const PREV_STATUS: Partial<Record<StatusKey, StatusKey>> = PREV_STATUS_BASE;
 
 // ============================================================================
 // COMPONENT
@@ -405,7 +374,7 @@ export default function OrdersPage() {
         const order = row.original;
         return (
           <div className="flex items-center gap-1">
-            {activeTab === 'delivered' && (
+            {activeTab === 'ready' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -456,9 +425,9 @@ export default function OrdersPage() {
   // Summary stats derived from counts
   const activeCount    = (counts.active ?? 0);
   const pendingCount   = (counts.pending ?? 0);
-  const inWorkCount    = (['washing','ironing','in_progress','confirmed','picked-up'] as StatusKey[])
+  const inWorkCount    = (['in_progress','confirmed'] as StatusKey[])
     .reduce((s, k) => s + (counts[k] ?? 0), 0);
-  const deliveredCount = (counts.delivered ?? 0) + (counts.completed ?? 0);
+  const deliveredCount = (counts.completed ?? 0);
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -466,7 +435,7 @@ export default function OrdersPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold">Orders</h1>
-          <p className="text-muted-foreground text-sm">11-stage laundry workflow</p>
+          <p className="text-muted-foreground text-sm">Order workflow</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canExport && (
@@ -671,7 +640,7 @@ export default function OrdersPage() {
                     canEdit={canEdit}
                     canAssign={canAssign}
                     canDelete={canDelete}
-                    showComplete={tab.key === 'delivered'}
+                    showComplete={tab.key === 'ready'}
                     onView={() => navigate(`/admin/orders/${order._id}`)}
                     onEdit={() => setEditTarget(order)}
                     onAssign={() => setAssignTarget(order)}

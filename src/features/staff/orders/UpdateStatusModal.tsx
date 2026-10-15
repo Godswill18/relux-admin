@@ -31,15 +31,10 @@ import apiClient from '@/lib/api/client';
 
 // Statuses that staff can manually transition an order to (forward order)
 const STAFF_STATUSES = [
-  { value: 'confirmed',         label: 'Confirmed' },
-  { value: 'picked-up',         label: 'Picked Up' },
-  { value: 'in_progress',       label: 'In Progress' },
-  { value: 'washing',           label: 'Washing' },
-  { value: 'ironing',           label: 'Ironing' },
-  { value: 'ready',             label: 'Ready for Collection' },
-  { value: 'out-for-delivery',  label: 'Out for Delivery' },
-  { value: 'delivered',         label: 'Delivered' },
-  { value: 'completed',         label: 'Completed' },
+  { value: 'confirmed',   label: 'Confirmed' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'ready',       label: 'Ready' },
+  { value: 'completed',   label: 'Completed' },
 ];
 
 const PAYMENT_STATUSES = [
