@@ -158,6 +158,9 @@ export default function AdminDashboard() {
   interface DashStats {
     totalRevenue: number;
     todayRevenue: number;
+    monthRevenue?: number;
+    revenueOrders?: number;
+    revenueLast7Days?: { date: string; revenue: number; revenueOrders: number }[];
     totalOrders: number;
     activeOrders: number;
     pendingPayments: number;
@@ -211,17 +214,19 @@ export default function AdminDashboard() {
       const dayOrders = safeOrders.filter((o: any) =>
         isSameDay(new Date(o.createdAt), day)
       );
-      const revenue = dayOrders
-        .filter((o: any) => o.payment?.status === 'paid' || o.paymentStatus === 'paid')
-        .reduce((sum: number, o: any) => sum + (o.pricing?.total || o.total || 0), 0);
+      // Revenue comes from the server (paid, non-cancelled orders, WAT days) —
+      // never summed here from a partial, paginated order list.
+      const revenue = dashStats?.revenueLast7Days?.[i]?.revenue ?? 0;
 
+      const serverDay = dashStats?.revenueLast7Days?.[i]?.date;
       return {
-        date: format(day, 'MMM d'),
+        // Label from the server's WAT day so the bar and its date always agree
+        date: serverDay ? format(new Date(`${serverDay}T12:00:00`), 'MMM d') : format(day, 'MMM d'),
         revenue,
         orders: dayOrders.length,
       };
     });
-  }, [safeOrders]);
+  }, [safeOrders, dashStats]);
 
   // ---- Chart: Orders by status ----
 
@@ -331,7 +336,7 @@ export default function AdminDashboard() {
           <MetricCard
             title="Total Revenue"
             value={`₦${totalRevenue.toLocaleString()}`}
-            description="All paid orders"
+            description="Paid orders (excl. cancelled)"
             icon={<DollarSign />}
             accentColor="#10b981"
           />
