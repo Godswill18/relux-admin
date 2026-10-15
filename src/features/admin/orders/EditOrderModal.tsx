@@ -218,7 +218,7 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
   const previousTotal = order?.pricing?.total || order?.total || 0;
   const difference    = Math.round((previousTotal - total) * 100) / 100; // positive = refund
   const paidViaWallet = order?.payment?.method === 'wallet' && order?.paymentStatus === 'paid';
-  const isLocked      = ['completed', 'delivered', 'cancelled'].includes(order?.status || '');
+  const isLocked      = ['completed', 'cancelled'].includes(order?.status || '');
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const onSubmit = async (data: EditOrderForm) => {

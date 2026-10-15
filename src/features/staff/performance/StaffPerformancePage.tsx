@@ -73,8 +73,8 @@ interface CompletedOrder {
 // HELPERS
 // ============================================================================
 
-// Both 'completed' and 'delivered' count as terminal states for performance tracking
-const TERMINAL = ['completed', 'delivered'];
+// 'completed' is the only successful terminal state (delivery is metadata)
+const TERMINAL = ['completed'];
 
 function getCompletedAt(order: CompletedOrder): Date {
   const hist = order.statusHistory ?? [];

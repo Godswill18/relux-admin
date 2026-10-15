@@ -107,13 +107,13 @@ export default function DeliveryDashboard() {
   };
 
   // ── Active delivery orders (not yet delivered) ────────────────────────────
-  const activeOrders = orders.filter((o) => !['delivered', 'completed', 'cancelled'].includes(o.status));
+  const activeOrders = orders.filter((o) => !['completed', 'cancelled'].includes(o.status));
 
   // ── Metrics ────────────────────────────────────────────────────────────────
-  const pickedUp       = activeOrders.filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing', 'ready', 'out-for-delivery'].includes(o.status));
-  const delivered      = orders.filter((o) => ['delivered', 'completed'].includes(o.status) && deliveredByMe(o));
+  const pickedUp       = activeOrders.filter((o) => ['confirmed', 'in_progress', 'ready'].includes(o.status) && !!o.actualPickupDate);
+  const delivered      = orders.filter((o) => o.status === 'completed' && deliveredByMe(o));
   const pendingPickup  = activeOrders.filter((o) => ['pending', 'confirmed', 'pending-pickup'].includes(o.status) && o.orderType === 'pickup-delivery');
-  const pendingDelivery = activeOrders.filter((o) => o.status === 'ready' || o.status === 'out-for-delivery');
+  const pendingDelivery = activeOrders.filter((o) => o.status === 'ready');
   const todayPickups   = activeOrders.filter((o) => o.actualPickupDate && isSameDay(new Date(o.actualPickupDate), today));
   const todayDeliveries = orders.filter((o) => o.actualDeliveryDate && isSameDay(new Date(o.actualDeliveryDate), today) && deliveredByMe(o));
 
@@ -214,7 +214,7 @@ export default function DeliveryDashboard() {
       </div>
 
       {/* Recent activity */}
-      {activeOrders.filter((o) => ['out-for-delivery', 'picked-up'].includes(o.status)).length > 0 && (
+      {activeOrders.filter((o) => o.deliveryStatus === 'out_for_delivery' || (o.status === 'confirmed' && !!o.actualPickupDate)).length > 0 && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">In Progress</h2>
           <div className="space-y-2">

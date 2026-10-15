@@ -68,19 +68,8 @@ import { useAuthStore } from '@/stores/useAuthStore';
 // STATUS HELPERS
 // ============================================================================
 
-const ORDER_STATUSES = [
-  'pending',
-  'confirmed',
-  'picked-up',
-  'in_progress',
-  'washing',
-  'ironing',
-  'ready',
-  'out-for-delivery',
-  'delivered',
-  'completed',
-  'cancelled',
-] as const;
+// Canonical statuses only — see lib/orderStatus.ts
+const ORDER_STATUSES = ['pending', 'confirmed', 'in_progress', 'ready', 'completed', 'cancelled'] as const;
 
 function statusLabel(status: string) {
   return getOrderStatusConfig(status).label;
@@ -231,7 +220,7 @@ export default function OrderDetailPage() {
   };
 
   // Handle status change — block delivery/completion if payment is not paid
-  const DELIVERY_STATUSES = ['delivered', 'completed'];
+  const DELIVERY_STATUSES = ['completed'];
 
   const handleConfirmedStatusChange = async (newStatus: string) => {
     if (!id || !order) return;
@@ -369,7 +358,7 @@ export default function OrderDetailPage() {
             <Printer className="mr-2 h-4 w-4" />
             <span className="hidden xs:inline">Print </span>Receipt
           </Button>
-          {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
+          {!['completed', 'cancelled'].includes(order.status) && (
             <Button
               variant="outline"
               size="sm"
@@ -380,7 +369,7 @@ export default function OrderDetailPage() {
               Cancel Order
             </Button>
           )}
-          {!['completed', 'delivered', 'cancelled'].includes(order.status) && (
+          {!['completed', 'cancelled'].includes(order.status) && (
             <Button variant="outline" size="sm" onClick={() => setIsEditOpen(true)}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit Order
@@ -409,7 +398,7 @@ export default function OrderDetailPage() {
               <SelectContent>
                 {ORDER_STATUSES.map((s) => {
                   const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-                  const blocked = ['delivered', 'completed'].includes(s) && payStatus !== 'paid';
+                  const blocked = s === 'completed' && payStatus !== 'paid';
                   return (
                     <SelectItem key={s} value={s} disabled={blocked}>
                       {statusLabel(s)}{blocked ? ' (payment required)' : ''}
@@ -439,7 +428,7 @@ export default function OrderDetailPage() {
       {/* Payment gate warning — shown when order is approaching delivery but not paid */}
       {(() => {
         const payStatus = order.paymentStatus || order.payment?.status || 'unpaid';
-        const nearDelivery = ['ready', 'out-for-delivery', 'delivered', 'completed'].includes(order.status);
+        const nearDelivery = ['ready', 'completed'].includes(order.status);
         if (nearDelivery && payStatus !== 'paid') {
           return (
             <div className="flex items-start gap-3 rounded-lg border border-destructive bg-destructive/10 p-4 text-sm text-destructive">
@@ -448,7 +437,7 @@ export default function OrderDetailPage() {
                 <p className="font-semibold">Payment Not Confirmed</p>
                 <p className="text-destructive/80 mt-0.5">
                   This order's payment status is <strong className="capitalize">{payStatus}</strong>.
-                  Update the payment status to <strong>Paid</strong> before marking the order as Delivered or Completed.
+                  Update the payment status to <strong>Paid</strong> before marking the order as Completed.
                 </p>
               </div>
             </div>

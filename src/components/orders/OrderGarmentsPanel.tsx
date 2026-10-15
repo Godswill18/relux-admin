@@ -356,7 +356,7 @@ export function OrderGarmentsPanel({ order, canManage, onChanged }: {
   const items: any[] = order?.items || [];
   const collections: any[] = order?.collections || [];
   const events: any[] = (order?.fulfilmentHistory || []).slice().reverse();
-  const closedLegacy = !f.recorded && ['delivered', 'completed'].includes(order?.status);
+  const closedLegacy = !f.recorded && order?.status === 'completed';
   const actionable = canManage && order?.status !== 'cancelled' && !closedLegacy && items.length > 0;
 
   return (

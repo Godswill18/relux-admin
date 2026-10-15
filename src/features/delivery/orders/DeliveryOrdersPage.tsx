@@ -409,7 +409,7 @@ export default function DeliveryOrdersPage() {
         const raw = r.data.data;
         return Array.isArray(raw) ? raw : raw?.orders ?? [];
       };
-      const active = toList(activeRes).filter((o: any) => !['delivered', 'completed', 'cancelled'].includes(o.status));
+      const active = toList(activeRes).filter((o: any) => !['completed', 'cancelled'].includes(o.status));
       const done = toList(doneRes);
       setOrders([...active, ...done]);
     } catch {
@@ -435,7 +435,7 @@ export default function DeliveryOrdersPage() {
     const onDeliveryClaimed = ({ orderId, deliveredBy }: any) => {
       setOrders((prev) => prev.map((o) =>
         (o._id === orderId || o.id === orderId)
-          ? { ...o, deliveredBy: { _id: deliveredBy }, status: 'out-for-delivery' }
+          ? { ...o, deliveredBy: { _id: deliveredBy }, deliveryStatus: 'out_for_delivery' }
           : o
       ));
     };
@@ -443,7 +443,7 @@ export default function DeliveryOrdersPage() {
       setOrders((prev) => {
         // If status moved to delivered/completed/cancelled and it's not our
         // delivered order, drop it from the active list entirely
-        const shouldRemove = ['delivered', 'completed', 'cancelled'].includes(status);
+        const shouldRemove = ['completed', 'cancelled'].includes(status);
         return prev
           .map((o) => (o._id === orderId || o.id === orderId) ? { ...o, status } : o)
           .filter((o) => {
@@ -546,6 +546,7 @@ export default function DeliveryOrdersPage() {
   const availablePickups = useMemo(() =>
     orders.filter((o) =>
       o.status === 'confirmed' &&
+      !o.actualPickupDate &&
       o.orderType === 'pickup-delivery' &&
       !o.pickupStaffId
     ), [orders]);
@@ -553,6 +554,7 @@ export default function DeliveryOrdersPage() {
   const myPickups = useMemo(() =>
     orders.filter((o) =>
       o.status === 'confirmed' &&
+      !o.actualPickupDate &&
       o.orderType === 'pickup-delivery' &&
       isMyPickup(o)
     ), [orders, myId]);
@@ -560,7 +562,8 @@ export default function DeliveryOrdersPage() {
   // Picked-up tab — orders I've physically collected, now at laundry
   const myPickedUp = useMemo(() =>
     orders.filter((o) =>
-      ['picked-up', 'in_progress', 'washing', 'ironing', 'ready'].includes(o.status) &&
+      ['confirmed', 'in_progress', 'ready'].includes(o.status) &&
+      !!o.actualPickupDate &&
       isMyPickup(o)
     ), [orders, myId]);
 
@@ -572,12 +575,12 @@ export default function DeliveryOrdersPage() {
 
   const myDeliveries = useMemo(() =>
     orders.filter((o) =>
-      o.status === 'out-for-delivery' && isMyDelivery(o)
+      o.deliveryStatus === 'out_for_delivery' && isMyDelivery(o)
     ), [orders, myId]);
 
   // Tab 3 — Delivered
   const deliveredOrders = useMemo(() =>
-    orders.filter((o) => ['delivered', 'completed'].includes(o.status)), [orders]);
+    orders.filter((o) => o.status === 'completed'), [orders]);
 
   const filteredDelivered = useMemo(() => {
     let list = deliveredOrders;
@@ -762,15 +765,15 @@ export default function DeliveryOrdersPage() {
           ) : (
             <div className="space-y-4">
               {/* Currently at laundry being processed */}
-              {applySearch(myPickedUp).filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing'].includes(o.status)).length > 0 && (
+              {applySearch(myPickedUp).filter((o) => ['confirmed', 'in_progress'].includes(o.status)).length > 0 && (
                 <div className="space-y-2">
                   <SectionLabel
                     icon={Clock}
                     label="At Laundry"
-                    count={applySearch(myPickedUp).filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing'].includes(o.status)).length}
+                    count={applySearch(myPickedUp).filter((o) => ['confirmed', 'in_progress'].includes(o.status)).length}
                   />
                   {applySearch(myPickedUp)
-                    .filter((o) => ['picked-up', 'in_progress', 'washing', 'ironing'].includes(o.status))
+                    .filter((o) => ['confirmed', 'in_progress'].includes(o.status))
                     .map((o) => (
                       <OrderCard
                         key={o._id || o.id}
@@ -828,11 +831,11 @@ export default function DeliveryOrdersPage() {
           ) : (
             <>
               {/* Out for delivery */}
-              {applySearch(myDeliveries).filter((o) => o.status === 'out-for-delivery').length > 0 && (
+              {applySearch(myDeliveries).filter((o) => o.deliveryStatus === 'out_for_delivery').length > 0 && (
                 <div className="space-y-2">
-                  <SectionLabel icon={Navigation} label="Out for Delivery" count={myDeliveries.filter((o) => o.status === 'out-for-delivery').length} />
+                  <SectionLabel icon={Navigation} label="Out for Delivery" count={myDeliveries.filter((o) => o.deliveryStatus === 'out_for_delivery').length} />
                   {applySearch(myDeliveries)
-                    .filter((o) => o.status === 'out-for-delivery')
+                    .filter((o) => o.deliveryStatus === 'out_for_delivery')
                     .map((o) => (
                       <OrderCard key={o._id || o.id} order={o} onView={setViewOrder} highlight="green" actions={[]} />
                     ))}
