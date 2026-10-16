@@ -5,6 +5,7 @@
 // Badge counts are staff-specific, fetched on load + every 30s + via socket
 // ============================================================================
 
+import { ListPager } from '@/components/shared/ListPager';
 import { type OrderStatus, NEXT_STATUS as NEXT_STATUS_BASE, PREV_STATUS as PREV_STATUS_BASE } from '@/lib/orderStatus';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ColumnDef } from '@tanstack/react-table';
@@ -56,7 +57,9 @@ const SERVICE_LABELS: Record<string, string> = {
   'dry-clean': 'Dry Clean',
 };
 
+// 'all' is a FILTER, never a stored status: the backend adds no status condition.
 type StatusKey = OrderStatus;
+type TabKey = 'all' | StatusKey;
 
 // ── Created By Badge ────────────────────────────────────────────────────────
 function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
@@ -98,7 +101,8 @@ const NEXT_STATUS_LABEL: Partial<Record<StatusKey, string>> = {
   ready:       'Mark Completed',
 };
 
-const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
+const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'all',         label: 'All',         icon: <Package className="h-3.5 w-3.5" /> },
   { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
   { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
   { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
@@ -126,7 +130,11 @@ export default function StaffOrdersPage() {
   const { user } = useAuthStore();
   const navigate  = useNavigate();
 
-  const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
+  const [activeTab,    setActiveTab]    = useState<TabKey>('all');
+  const PAGE_SIZE = 50;
+  const [page,         setPage]         = useState(1);
+  const [pagination,   setPagination]   = useState<{ page: number; pages: number; total: number }>({ page: 1, pages: 1, total: 0 });
+  const [allCount,     setAllCount]     = useState(0);
   const [viewScope,    setViewScope]    = useState<'all' | 'mine'>('all');
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
@@ -153,9 +161,10 @@ export default function StaffOrdersPage() {
 
   // ── Fetch tab counts — scope=all shows system-wide counts, scope=mine shows personal ──
   const fetchCounts = useCallback(() => {
-    apiClient.get('/orders/staff-counts', { params: { scope: viewScope, include: 'fulfilment' } })
+    apiClient.get('/orders/staff-counts', { params: { scope: viewScope, include: 'fulfilment,totals' } })
       .then((res) => {
         if (!res.data?.data) return;
+        setAllCount(res.data.data.totals?.all ?? 0);
         const { counts: byStatus, garments } = splitCounts(res.data.data);
         setCounts(byStatus);
         setGarmentStats(garments);
@@ -248,13 +257,15 @@ export default function StaffOrdersPage() {
       setIsLoading(true);
       setSearch('');
       try {
-        const params: Record<string, string> = { statusTab: activeTab, limit: '100' };
+        const params: Record<string, string> = { statusTab: activeTab, page: String(page), limit: String(PAGE_SIZE) };
         // In "My Orders" scope, filter server-side to orders involving this staff
         if (viewScope === 'mine' && activeTab !== 'pending') params.myOrders = 'true';
         const res = await apiClient.get('/orders', { params });
         if (!cancelled) {
           const raw = res.data.data;
           setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
+          const pg = res.data?.pagination;
+          setPagination({ page: pg?.page ?? 1, pages: pg?.pages || 1, total: pg?.total ?? 0 });
         }
       } catch {
         if (!cancelled) setOrders([]);
@@ -264,7 +275,10 @@ export default function StaffOrdersPage() {
     };
     fetchOrders();
     return () => { cancelled = true; };
-  }, [activeTab, viewScope, refreshKey, listKey]);
+  }, [activeTab, viewScope, page, refreshKey, listKey]);
+
+  // A new tab or scope always starts on its first page
+  useEffect(() => { setPage(1); }, [activeTab, viewScope]);
 
   // Cross-tab search — and the garment filters (ready for collection, …)
   useEffect(() => {
@@ -546,7 +560,9 @@ export default function StaffOrdersPage() {
     },
   ];
 
-  function columnsForTab(key: StatusKey): ColumnDef<any>[] {
+  function columnsForTab(key: TabKey): ColumnDef<any>[] {
+    // All is a browse view (any status): read-only; actions live in each status tab.
+    if (key === 'all')                                              return readOnlyColumns;
     if (key === 'pending')                                          return pendingColumns;
     if (key === 'completed' || key === 'cancelled') return readOnlyColumns;
     return activeColumns;
@@ -759,11 +775,11 @@ export default function StaffOrdersPage() {
       )}
 
       {/* ── 11-Status Tab Strip ──────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as StatusKey); setSearch(''); }}>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); setSearch(''); }}>
         <div className="w-full overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
-              const count = counts[tab.key] ?? 0;
+              const count = tab.key === 'all' ? allCount : (counts[tab.key] ?? 0);
               return (
                 <TabsTrigger
                   key={tab.key}
@@ -843,7 +859,9 @@ export default function StaffOrdersPage() {
                   {tab.icon} {tab.label}
                 </CardTitle>
                 <CardDescription>
-                  {tab.key === 'pending'
+                  {tab.key === 'all'
+                    ? `${viewScope === 'all' ? 'Every order' : 'Every order you are involved with'}, any status — ${pagination.total.toLocaleString()} in total`
+                    : tab.key === 'pending'
                     ? 'Unassigned orders available to claim'
                     : viewScope === 'all'
                     ? `All orders at ${tab.label.toLowerCase()} stage`
@@ -859,8 +877,12 @@ export default function StaffOrdersPage() {
                   onRowClick={(row) => setDetailOrder(row)}
                   showColumnVisibility
                 />
+                <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
               </CardContent>
             </Card>
+            <div className="md:hidden">
+              <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
+            </div>
           </TabsContent>
         ))}
       </Tabs>
@@ -923,7 +945,7 @@ export default function StaffOrdersPage() {
 
 interface StaffMobileCardProps {
   order: any;
-  tabKey: StatusKey;
+  tabKey: TabKey;
   onView: () => void;
   onAccept: () => void;
   onUpdateStatus: () => void;
@@ -942,7 +964,7 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
   const total        = order.pricing?.total ?? order.total ?? 0;
   const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
   const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
-  const isReadOnly   = tabKey === 'completed' || tabKey === 'cancelled';
+  const isReadOnly   = tabKey === 'all' || tabKey === 'completed' || tabKey === 'cancelled';
 
   return (
     <SwipeableCard

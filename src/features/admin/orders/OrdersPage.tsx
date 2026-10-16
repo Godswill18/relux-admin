@@ -13,6 +13,8 @@ import {
   PackageCheck, Navigation, Home, XCircle, FileDown,
 } from 'lucide-react';
 import { type OrderStatus, NEXT_STATUS as NEXT_STATUS_BASE, PREV_STATUS as PREV_STATUS_BASE } from '@/lib/orderStatus';
+import { ListPager } from '@/components/shared/ListPager';
+import { normalizeOrderStatus } from '@/lib/orderStatus';
 import { CreateOrderModal } from './CreateOrderModal';
 import { ExportOrdersModal } from './ExportOrdersModal';
 import { EditOrderModal } from './EditOrderModal';
@@ -48,9 +50,12 @@ import socketClient from '@/lib/socket/client';
 // CONSTANTS
 // ============================================================================
 
+// 'all' is a FILTER, never a stored status: the backend adds no status condition.
 type StatusKey = OrderStatus;
+type TabKey = 'all' | StatusKey;
 
-const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
+const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'all',         label: 'All',         icon: <Package className="h-3.5 w-3.5" /> },
   { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
   { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
   { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
@@ -77,7 +82,10 @@ export default function OrdersPage() {
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
   const canExport = useHasPermission(Permission.EXPORT_REPORTS);
 
-  const [activeTab,    setActiveTab]    = useState<StatusKey>('pending');
+  const [activeTab,    setActiveTab]    = useState<TabKey>('all');
+  const PAGE_SIZE = 50;
+  const [page,         setPage]         = useState(1);
+  const [pagination,   setPagination]   = useState<{ page: number; pages: number; total: number }>({ page: 1, pages: 1, total: 0 });
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
   const [garmentStats, setGarmentStats] = useState<GarmentStats | null>(null);
@@ -182,11 +190,13 @@ export default function OrdersPage() {
       setIsLoading(true);
       try {
         const res = await apiClient.get('/orders', {
-          params: { statusTab: activeTab, limit: '100' },
+          params: { statusTab: activeTab, page: String(page), limit: String(PAGE_SIZE) },
         });
         if (!cancelled) {
           const raw = res.data?.data;
           setOrders(Array.isArray(raw) ? raw : raw?.orders ?? []);
+          const pg = res.data?.pagination;
+          setPagination({ page: pg?.page ?? 1, pages: pg?.pages || 1, total: pg?.total ?? 0 });
         }
       } catch {
         if (!cancelled) setOrders([]);
@@ -196,7 +206,10 @@ export default function OrdersPage() {
     };
     fetch();
     return () => { cancelled = true; };
-  }, [activeTab, refreshKey, listKey]);
+  }, [activeTab, page, refreshKey, listKey]);
+
+  // A new tab always starts on its first page
+  useEffect(() => { setPage(1); }, [activeTab]);
 
   // ── Global cross-tab search (debounced) ──────────────────────────────────
   useEffect(() => {
@@ -234,7 +247,7 @@ export default function OrdersPage() {
   };
 
   const handleSwipeStatus = async (order: any, newStatus: StatusKey) => {
-    const originalStatus = order.status as StatusKey;
+    const originalStatus = (normalizeOrderStatus(order.status) ?? order.status) as StatusKey;
     const label = newStatus.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
     // Optimistic: update badge + counts immediately
     setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: newStatus } : o));
@@ -246,8 +259,9 @@ export default function OrdersPage() {
     try {
       await apiClient.patch(`/orders/${order._id}/status`, { status: newStatus });
       toast.success(`Order ${order.orderNumber} → ${label}`);
-      // Remove from current tab — it now belongs to a different status tab
-      setOrders((prev) => prev.filter((o) => o._id !== order._id));
+      // Leaves a status tab (it belongs to another one now) — but an order never
+      // leaves All just because its status changed.
+      if (activeTab !== 'all') setOrders((prev) => prev.filter((o) => o._id !== order._id));
     } catch (err: any) {
       // Revert badge + counts
       setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: originalStatus } : o));
@@ -374,7 +388,7 @@ export default function OrdersPage() {
         const order = row.original;
         return (
           <div className="flex items-center gap-1">
-            {activeTab === 'ready' && (
+            {normalizeOrderStatus(order.status) === 'ready' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -567,7 +581,7 @@ export default function OrdersPage() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={(e) => { e.stopPropagation(); setActiveTab(order.status as StatusKey); setSearch(''); }}
+                        onClick={(e) => { e.stopPropagation(); setActiveTab((normalizeOrderStatus(order.status) ?? 'all') as TabKey); setSearch(''); }}
                       >
                         Go to tab
                       </Button>
@@ -581,11 +595,11 @@ export default function OrdersPage() {
       )}
 
       {/* ── 11-Status Tab Strip ─────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as StatusKey); setSearch(''); }}>
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); setSearch(''); }}>
         <div className="w-full overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
-              const count = counts[tab.key] ?? 0;
+              const count = tab.key === 'all' ? (counts.total ?? 0) : (counts[tab.key] ?? 0);
               return (
                 <TabsTrigger
                   key={tab.key}
@@ -630,9 +644,10 @@ export default function OrdersPage() {
                 </Card>
               ) : (
                 filteredOrders.map((order) => {
-                  const nextStatus = NEXT_STATUS[order.status as StatusKey];
-                  const prevStatus = PREV_STATUS[order.status as StatusKey];
-                  const isCancelled = order.status === 'cancelled';
+                  const canon = normalizeOrderStatus(order.status) as StatusKey;
+                  const nextStatus = NEXT_STATUS[canon];
+                  const prevStatus = PREV_STATUS[canon];
+                  const isCancelled = canon === 'cancelled';
                   return (
                   <AdminMobileCard
                     key={order._id}
@@ -640,7 +655,7 @@ export default function OrdersPage() {
                     canEdit={canEdit}
                     canAssign={canAssign}
                     canDelete={canDelete}
-                    showComplete={tab.key === 'ready'}
+                    showComplete={canon === 'ready'}
                     onView={() => navigate(`/admin/orders/${order._id}`)}
                     onEdit={() => setEditTarget(order)}
                     onAssign={() => setAssignTarget(order)}
@@ -663,7 +678,8 @@ export default function OrdersPage() {
                   {tab.icon} {tab.label}
                 </CardTitle>
                 <CardDescription>
-                  {filteredOrders.length} order{filteredOrders.length !== 1 ? 's' : ''}
+                  {pagination.total.toLocaleString()} order{pagination.total !== 1 ? 's' : ''}
+                  {pagination.pages > 1 ? ` · page ${pagination.page} of ${pagination.pages}` : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -675,8 +691,12 @@ export default function OrdersPage() {
                   onRowClick={(o: any) => navigate(`/admin/orders/${o._id}`)}
                   showColumnVisibility
                 />
+                <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
               </CardContent>
             </Card>
+            <div className="md:hidden">
+              <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
+            </div>
           </TabsContent>
         ))}
       </Tabs>
