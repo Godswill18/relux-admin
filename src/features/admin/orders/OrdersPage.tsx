@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ColumnDef } from '@tanstack/react-table';
 import {
   Plus, MoreHorizontal, Eye, Edit, Trash, UserPlus, ScanLine,
@@ -27,7 +27,7 @@ import { SwipeableCard } from '@/components/shared/SwipeableCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderStatusBadge, PaymentStatusBadge, PriorityBadge } from '@/components/shared/StatusBadges';
 import { GarmentProgressBadge } from '@/components/orders/OrderGarmentsPanel';
 import {
@@ -50,12 +50,12 @@ import socketClient from '@/lib/socket/client';
 // CONSTANTS
 // ============================================================================
 
-// 'all' is a FILTER, never a stored status: the backend adds no status condition.
+// No tab selected (null) = NO status filter: the backend adds no status
+// condition, so every authorised order is listed — legacy statuses included.
 type StatusKey = OrderStatus;
-type TabKey = 'all' | StatusKey;
+type TabKey = StatusKey | null;
 
-const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'all',         label: 'All',         icon: <Package className="h-3.5 w-3.5" /> },
+const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
   { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
   { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
   { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
@@ -63,6 +63,19 @@ const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'completed',   label: 'Completed',   icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { key: 'cancelled',   label: 'Cancelled',   icon: <XCircle className="h-3.5 w-3.5" /> },
 ];
+
+// The list shown when no status tab is selected — a heading, not a tab.
+const UNFILTERED_VIEW = { key: 'unfiltered', label: 'All orders', icon: <Package className="h-3.5 w-3.5" /> };
+
+// Selected-tab colour per status (text label always shown too).
+const STATUS_TAB_TONE: Record<StatusKey, string> = {
+  pending:     'data-[state=active]:bg-amber-500/15 data-[state=active]:text-amber-700 dark:data-[state=active]:text-amber-400',
+  confirmed:   'data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-700 dark:data-[state=active]:text-blue-400',
+  in_progress: 'data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-400',
+  ready:       'data-[state=active]:bg-green-500/15 data-[state=active]:text-green-700 dark:data-[state=active]:text-green-400',
+  completed:   'data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-700 dark:data-[state=active]:text-emerald-400',
+  cancelled:   'data-[state=active]:bg-red-500/15 data-[state=active]:text-red-700 dark:data-[state=active]:text-red-400',
+};
 
 // ── Status progression maps for swipe gestures ──────────────────────────────
 // Forward/back steps come from lib/orderStatus.ts (one definition).
@@ -82,9 +95,39 @@ export default function OrdersPage() {
   const canDelete = useHasPermission(Permission.DELETE_ORDER);
   const canExport = useHasPermission(Permission.EXPORT_REPORTS);
 
-  const [activeTab,    setActiveTab]    = useState<TabKey>('all');
+  // ── List state lives in the URL (?status=&page=&q=) ───────────────────────
+  // So opening an order and coming back — app Back, browser Back or a refresh —
+  // restores the same tab, page and search. No ?status = no filter (every order);
+  // an old ?status=all, or any unknown value, also means no filter.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const statusParam = searchParams.get('status');
+  const activeTab: TabKey = STATUS_TABS.some((t) => t.key === statusParam) ? (statusParam as StatusKey) : null;
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1);
+  const search = searchParams.get('q') ?? '';
+  // One URL write per user action (two setSearchParams calls in one event
+  // would overwrite each other). A changed tab or search starts at page 1.
+  const updateList = useCallback((patch: { status?: TabKey; page?: number; q?: string }) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      const set = (k: string, v: string | null) => (v ? next.set(k, v) : next.delete(k));
+      if ('status' in patch) { set('status', patch.status ?? null); next.delete('page'); }
+      if ('q' in patch) { set('q', patch.q || null); next.delete('page'); }
+      if ('page' in patch) set('page', patch.page && patch.page > 1 ? String(patch.page) : null);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const setActiveTab = useCallback((status: TabKey) => updateList({ status, q: '' }), [updateList]);
+  const setPage = useCallback((p: number) => updateList({ page: p }), [updateList]);
+  const setSearch = useCallback((q: string) => updateList({ q }), [updateList]);
+
+  // Old bookmarks: ?status=all (or anything unknown) → the plain unfiltered URL
+  useEffect(() => {
+    if (statusParam !== null && !activeTab) updateList({ status: null });
+  }, [statusParam, activeTab, updateList]);
+
+  // Clicking the selected tab again clears the filter (back to every order)
+  const tabWasActive = useRef(false);
   const PAGE_SIZE = 50;
-  const [page,         setPage]         = useState(1);
   const [pagination,   setPagination]   = useState<{ page: number; pages: number; total: number }>({ page: 1, pages: 1, total: 0 });
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
@@ -93,7 +136,6 @@ export default function OrdersPage() {
   const [isLoading,    setIsLoading]    = useState(false);
   const [refreshKey,   setRefreshKey]   = useState(0);
   const [listKey,      setListKey]      = useState(0);
-  const [search,          setSearch]          = useState('');
   const [searchResults,   setSearchResults]   = useState<any[]>([]);
   const [isSearching,     setIsSearching]     = useState(false);
   const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -190,7 +232,7 @@ export default function OrdersPage() {
       setIsLoading(true);
       try {
         const res = await apiClient.get('/orders', {
-          params: { statusTab: activeTab, page: String(page), limit: String(PAGE_SIZE) },
+          params: { ...(activeTab ? { statusTab: activeTab } : {}), page: String(page), limit: String(PAGE_SIZE) },
         });
         if (!cancelled) {
           const raw = res.data?.data;
@@ -208,8 +250,8 @@ export default function OrdersPage() {
     return () => { cancelled = true; };
   }, [activeTab, page, refreshKey, listKey]);
 
-  // A new tab always starts on its first page
-  useEffect(() => { setPage(1); }, [activeTab]);
+  // (A new tab starting on page 1 is handled in updateList — an effect here
+  // would also wipe a restored ?page= on return.)
 
   // ── Global cross-tab search (debounced) ──────────────────────────────────
   useEffect(() => {
@@ -221,6 +263,8 @@ export default function OrdersPage() {
       try {
         const params: Record<string, string> = { limit: garmentFilter ? '100' : '50' };
         if (q) params.search = q;
+        // With a status selected, search within it; with none, across every order
+        if (activeTab) params.statusTab = activeTab;
         if (garmentFilter) Object.assign(params, filterParams(garmentFilter));
         const res = await apiClient.get('/orders', { params });
         const raw = res.data?.data;
@@ -232,7 +276,7 @@ export default function OrdersPage() {
       }
     }, 300);
     return () => { if (searchDebounce.current) clearTimeout(searchDebounce.current); };
-  }, [search, garmentFilter, listKey]);
+  }, [search, garmentFilter, listKey, activeTab]);
 
   const filteredOrders = useMemo(() => orders, [orders]);
 
@@ -261,7 +305,7 @@ export default function OrdersPage() {
       toast.success(`Order ${order.orderNumber} → ${label}`);
       // Leaves a status tab (it belongs to another one now) — but an order never
       // leaves All just because its status changed.
-      if (activeTab !== 'all') setOrders((prev) => prev.filter((o) => o._id !== order._id));
+      if (activeTab) setOrders((prev) => prev.filter((o) => o._id !== order._id));
     } catch (err: any) {
       // Revert badge + counts
       setOrders((prev) => prev.map((o) => o._id === order._id ? { ...o, status: originalStatus } : o));
@@ -581,7 +625,7 @@ export default function OrdersPage() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs"
-                        onClick={(e) => { e.stopPropagation(); setActiveTab((normalizeOrderStatus(order.status) ?? 'all') as TabKey); setSearch(''); }}
+                        onClick={(e) => { e.stopPropagation(); setActiveTab(normalizeOrderStatus(order.status)); }}
                       >
                         Go to tab
                       </Button>
@@ -594,17 +638,20 @@ export default function OrdersPage() {
         </Card>
       )}
 
-      {/* ── 11-Status Tab Strip ─────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); setSearch(''); }}>
-        <div className="w-full overflow-x-auto pb-1">
+      {/* ── Status filter strip — no tab selected = every order ─────────── */}
+      <Tabs value={activeTab ?? ''} onValueChange={(v) => setActiveTab((v || null) as TabKey)}>
+        <div className="flex items-center gap-2">
+        <div className="min-w-0 overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
-              const count = tab.key === 'all' ? (counts.total ?? 0) : (counts[tab.key] ?? 0);
+              const count = counts[tab.key] ?? 0;
               return (
                 <TabsTrigger
                   key={tab.key}
                   value={tab.key}
-                  className="flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5"
+                  onPointerDown={() => { tabWasActive.current = activeTab === tab.key; }}
+                  onClick={() => { const was = tabWasActive.current; tabWasActive.current = false; if (was) setActiveTab(null); }}
+                  className={`flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5 ${STATUS_TAB_TONE[tab.key]}`}
                 >
                   {tab.icon}
                   <span className="hidden sm:inline">{tab.label}</span>
@@ -621,9 +668,15 @@ export default function OrdersPage() {
             })}
           </TabsList>
         </div>
+          {activeTab && (
+            <Button variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => setActiveTab(null)}>
+              <XCircle className="mr-1 h-3.5 w-3.5" /> Clear filter
+            </Button>
+          )}
+        </div>
 
-        {STATUS_TABS.map((tab) => (
-          <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
+        {[activeTab ? STATUS_TABS.find((t) => t.key === activeTab)! : UNFILTERED_VIEW].map((tab) => (
+          <div key={tab.key} className="space-y-4 mt-4">
             {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {isLoading ? (
@@ -639,7 +692,7 @@ export default function OrdersPage() {
                 <Card>
                   <CardContent className="flex flex-col items-center gap-3 py-12">
                     <Package className="h-10 w-10 text-muted-foreground opacity-40" />
-                    <p className="text-sm text-muted-foreground">No {tab.label.toLowerCase()} orders</p>
+                    <p className="text-sm text-muted-foreground">{activeTab ? `No ${tab.label.toLowerCase()} orders` : 'No orders yet'}</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -697,7 +750,7 @@ export default function OrdersPage() {
             <div className="md:hidden">
               <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
             </div>
-          </TabsContent>
+          </div>
         ))}
       </Tabs>
     </div>
