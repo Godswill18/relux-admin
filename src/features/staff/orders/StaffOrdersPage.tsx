@@ -20,7 +20,7 @@ import { DataTable, DataTableColumnHeader } from '@/components/shared/DataTable'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -57,9 +57,12 @@ const SERVICE_LABELS: Record<string, string> = {
   'dry-clean': 'Dry Clean',
 };
 
-// 'all' is a FILTER, never a stored status: the backend adds no status condition.
+// No tab selected (null) = NO status filter: the backend adds no status
+// condition, so every authorised order is listed — legacy statuses included.
 type StatusKey = OrderStatus;
-type TabKey = 'all' | StatusKey;
+type TabKey = StatusKey | null;
+// What a card/column set is rendered for: a status, or the unfiltered list.
+type ViewKey = StatusKey | 'unfiltered';
 
 // ── Created By Badge ────────────────────────────────────────────────────────
 function CreatedByBadge({ role, source }: { role?: string; source?: string }) {
@@ -101,8 +104,7 @@ const NEXT_STATUS_LABEL: Partial<Record<StatusKey, string>> = {
   ready:       'Mark Completed',
 };
 
-const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'all',         label: 'All',         icon: <Package className="h-3.5 w-3.5" /> },
+const STATUS_TABS: { key: StatusKey; label: string; icon: React.ReactNode }[] = [
   { key: 'pending',     label: 'Pending',     icon: <Clock className="h-3.5 w-3.5" /> },
   { key: 'confirmed',   label: 'Confirmed',   icon: <Check className="h-3.5 w-3.5" /> },
   { key: 'in_progress', label: 'In Progress', icon: <Settings2 className="h-3.5 w-3.5" /> },
@@ -110,6 +112,19 @@ const STATUS_TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'completed',   label: 'Completed',   icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
   { key: 'cancelled',   label: 'Cancelled',   icon: <XCircle className="h-3.5 w-3.5" /> },
 ];
+
+// The list shown when no status tab is selected — a heading, not a tab.
+const UNFILTERED_VIEW: { key: ViewKey; label: string; icon: React.ReactNode } = { key: 'unfiltered', label: 'All orders', icon: <Package className="h-3.5 w-3.5" /> };
+
+// Selected-tab colour per status (text label always shown too).
+const STATUS_TAB_TONE: Record<StatusKey, string> = {
+  pending:     'data-[state=active]:bg-amber-500/15 data-[state=active]:text-amber-700 dark:data-[state=active]:text-amber-400',
+  confirmed:   'data-[state=active]:bg-blue-500/15 data-[state=active]:text-blue-700 dark:data-[state=active]:text-blue-400',
+  in_progress: 'data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-700 dark:data-[state=active]:text-cyan-400',
+  ready:       'data-[state=active]:bg-green-500/15 data-[state=active]:text-green-700 dark:data-[state=active]:text-green-400',
+  completed:   'data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-700 dark:data-[state=active]:text-emerald-400',
+  cancelled:   'data-[state=active]:bg-red-500/15 data-[state=active]:text-red-700 dark:data-[state=active]:text-red-400',
+};
 
 // ============================================================================
 // HELPERS
@@ -130,11 +145,12 @@ export default function StaffOrdersPage() {
   const { user } = useAuthStore();
   const navigate  = useNavigate();
 
-  const [activeTab,    setActiveTab]    = useState<TabKey>('all');
+  const [activeTab,    setActiveTab]    = useState<TabKey>(null);
+  // Clicking the selected tab again clears the filter (back to every order)
+  const tabWasActive = useRef(false);
   const PAGE_SIZE = 50;
   const [page,         setPage]         = useState(1);
   const [pagination,   setPagination]   = useState<{ page: number; pages: number; total: number }>({ page: 1, pages: 1, total: 0 });
-  const [allCount,     setAllCount]     = useState(0);
   const [viewScope,    setViewScope]    = useState<'all' | 'mine'>('all');
   const [orders,       setOrders]       = useState<any[]>([]);
   const [counts,       setCounts]       = useState<Record<string, number>>({});
@@ -161,10 +177,9 @@ export default function StaffOrdersPage() {
 
   // ── Fetch tab counts — scope=all shows system-wide counts, scope=mine shows personal ──
   const fetchCounts = useCallback(() => {
-    apiClient.get('/orders/staff-counts', { params: { scope: viewScope, include: 'fulfilment,totals' } })
+    apiClient.get('/orders/staff-counts', { params: { scope: viewScope, include: 'fulfilment' } })
       .then((res) => {
         if (!res.data?.data) return;
-        setAllCount(res.data.data.totals?.all ?? 0);
         const { counts: byStatus, garments } = splitCounts(res.data.data);
         setCounts(byStatus);
         setGarmentStats(garments);
@@ -257,7 +272,7 @@ export default function StaffOrdersPage() {
       setIsLoading(true);
       setSearch('');
       try {
-        const params: Record<string, string> = { statusTab: activeTab, page: String(page), limit: String(PAGE_SIZE) };
+        const params: Record<string, string> = { ...(activeTab ? { statusTab: activeTab } : {}), page: String(page), limit: String(PAGE_SIZE) };
         // In "My Orders" scope, filter server-side to orders involving this staff
         if (viewScope === 'mine' && activeTab !== 'pending') params.myOrders = 'true';
         const res = await apiClient.get('/orders', { params });
@@ -290,6 +305,8 @@ export default function StaffOrdersPage() {
       try {
         const params: Record<string, string> = { limit: garmentFilter ? '100' : '20' };
         if (q) params.search = q;
+        // With a status selected, search within it; with none, across every order
+        if (activeTab) params.statusTab = activeTab;
         if (garmentFilter) Object.assign(params, filterParams(garmentFilter));
         const res = await apiClient.get('/orders', { params });
         const raw = res.data.data;
@@ -560,9 +577,9 @@ export default function StaffOrdersPage() {
     },
   ];
 
-  function columnsForTab(key: TabKey): ColumnDef<any>[] {
-    // All is a browse view (any status): read-only; actions live in each status tab.
-    if (key === 'all')                                              return readOnlyColumns;
+  function columnsForTab(key: ViewKey): ColumnDef<any>[] {
+    // The unfiltered list mixes every status: read-only; actions live in each status tab.
+    if (key === 'unfiltered')                                              return readOnlyColumns;
     if (key === 'pending')                                          return pendingColumns;
     if (key === 'completed' || key === 'cancelled') return readOnlyColumns;
     return activeColumns;
@@ -774,17 +791,20 @@ export default function StaffOrdersPage() {
         </div>
       )}
 
-      {/* ── 11-Status Tab Strip ──────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as TabKey); setSearch(''); }}>
-        <div className="w-full overflow-x-auto pb-1">
+      {/* ── Status filter strip — no tab selected = every order ─────────── */}
+      <Tabs value={activeTab ?? ''} onValueChange={(v) => { setActiveTab((v || null) as TabKey); setSearch(''); }}>
+        <div className="flex items-center gap-2">
+        <div className="min-w-0 overflow-x-auto pb-1">
           <TabsList className="flex w-max gap-0.5">
             {STATUS_TABS.map((tab) => {
-              const count = tab.key === 'all' ? allCount : (counts[tab.key] ?? 0);
+              const count = counts[tab.key] ?? 0;
               return (
                 <TabsTrigger
                   key={tab.key}
                   value={tab.key}
-                  className="flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5"
+                  onPointerDown={() => { tabWasActive.current = activeTab === tab.key; }}
+                  onClick={() => { const was = tabWasActive.current; tabWasActive.current = false; if (was) setActiveTab(null); }}
+                  className={`flex items-center gap-1.5 text-xs whitespace-nowrap px-3 py-1.5 ${STATUS_TAB_TONE[tab.key]}`}
                 >
                   {tab.icon}
                   <span className="hidden sm:inline">{tab.label}</span>
@@ -799,9 +819,15 @@ export default function StaffOrdersPage() {
             })}
           </TabsList>
         </div>
+          {activeTab && (
+            <Button variant="ghost" size="sm" className="h-8 shrink-0 text-xs" onClick={() => setActiveTab(null)}>
+              <XCircle className="mr-1 h-3.5 w-3.5" /> Clear filter
+            </Button>
+          )}
+        </div>
 
-        {STATUS_TABS.map((tab) => (
-          <TabsContent key={tab.key} value={tab.key} className="space-y-4 mt-4">
+        {[activeTab ? STATUS_TABS.find((t) => t.key === activeTab)! as { key: ViewKey; label: string; icon: React.ReactNode } : UNFILTERED_VIEW].map((tab) => (
+          <div key={tab.key} className="space-y-4 mt-4">
             {/* ── Context banner for Pending tab ─────────────────────── */}
             {tab.key === 'pending' && (
               <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-900/10 dark:border-amber-800 px-4 py-2.5 text-sm text-amber-800 dark:text-amber-400">
@@ -824,7 +850,7 @@ export default function StaffOrdersPage() {
                 <Card>
                   <CardContent className="flex flex-col items-center gap-3 py-12">
                     <Package className="h-10 w-10 text-muted-foreground opacity-40" />
-                    <p className="text-sm text-muted-foreground">No {tab.label.toLowerCase()} orders</p>
+                    <p className="text-sm text-muted-foreground">{activeTab ? `No ${tab.label.toLowerCase()} orders` : 'No orders yet'}</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -859,7 +885,7 @@ export default function StaffOrdersPage() {
                   {tab.icon} {tab.label}
                 </CardTitle>
                 <CardDescription>
-                  {tab.key === 'all'
+                  {tab.key === 'unfiltered'
                     ? `${viewScope === 'all' ? 'Every order' : 'Every order you are involved with'}, any status — ${pagination.total.toLocaleString()} in total`
                     : tab.key === 'pending'
                     ? 'Unassigned orders available to claim'
@@ -883,7 +909,7 @@ export default function StaffOrdersPage() {
             <div className="md:hidden">
               <ListPager page={pagination.page} pages={pagination.pages} total={pagination.total} onPage={setPage} isLoading={isLoading} />
             </div>
-          </TabsContent>
+          </div>
         ))}
       </Tabs>
 
@@ -945,7 +971,7 @@ export default function StaffOrdersPage() {
 
 interface StaffMobileCardProps {
   order: any;
-  tabKey: TabKey;
+  tabKey: ViewKey;
   onView: () => void;
   onAccept: () => void;
   onUpdateStatus: () => void;
@@ -964,7 +990,7 @@ function StaffMobileCard({ order, tabKey, onView, onAccept, onUpdateStatus, onNe
   const total        = order.pricing?.total ?? order.total ?? 0;
   const payStatus    = order.paymentStatus || order.payment?.status || 'unpaid';
   const createdAt    = order.createdAt ? format(new Date(order.createdAt), 'MMM dd, yyyy') : '—';
-  const isReadOnly   = tabKey === 'all' || tabKey === 'completed' || tabKey === 'cancelled';
+  const isReadOnly   = tabKey === 'unfiltered' || tabKey === 'completed' || tabKey === 'cancelled';
 
   return (
     <SwipeableCard

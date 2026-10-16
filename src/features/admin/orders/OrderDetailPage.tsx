@@ -94,6 +94,15 @@ function serviceLabel(value?: string | null) {
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Back returns to wherever the user came from (the Orders list with its tab,
+  // page and search in the URL, the dashboard, a customer…). Opened directly
+  // (bookmark, notification in a new tab) there is no in-app page behind it, so
+  // go to the unfiltered Orders list rather than leaving the app.
+  const goBack = () => {
+    const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+    if (idx > 0) navigate(-1);
+    else navigate('/admin/orders');
+  };
   const { updateOrderStatus, assignStaff } = useOrderStore();
   const { staff: staffList, fetchStaff } = useStaffStore();
   const [order, setOrder] = useState<any>(null);
@@ -293,7 +302,7 @@ export default function OrderDetailPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
@@ -308,7 +317,7 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <div className="space-y-6">
-        <Button variant="ghost" onClick={() => navigate(-1)}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
@@ -337,7 +346,7 @@ export default function OrderDetailPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         {/* Left: back + title */}
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => navigate(-1)}>
+          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={goBack}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="min-w-0">
