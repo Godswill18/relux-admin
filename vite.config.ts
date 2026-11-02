@@ -14,4 +14,16 @@ export default defineConfig(() => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Stable libraries get their own long-cached files, so a code change
+        // doesn't make everyone re-download them.
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          socket: ['socket.io-client'],
+        },
+      },
+    },
+  },
 }));

@@ -2,7 +2,7 @@
 // BARCODE SCANNER MODAL - Scan QR code → redirect to Delivery Confirm page
 // ============================================================================
 
-import { useState, useRef, useEffect } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ScanLine, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,8 @@ import { Separator } from '@/components/ui/separator';
 // react-qr-scanner (jsQR based, default export)
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore — no types for this package
-import QrReader from 'react-qr-scanner';
+// The camera library is ~400 KB: fetched only when a scanner is actually opened.
+const QrReader = lazy(() => import('react-qr-scanner'));
 
 interface Props {
   open: boolean;
@@ -86,13 +87,15 @@ export function BarcodeScannerModal({ open, onOpenChange, confirmPath = '/admin/
           {!manualMode && !cameraError && (
             <div className="space-y-2">
               <div className="relative overflow-hidden rounded-lg border bg-black">
-                <QrReader
-                  delay={300}
-                  onScan={handleCameraScan}
-                  onError={handleCameraError}
-                  style={{ width: '100%' }}
-                  constraints={{ audio: false, video: { facingMode: 'environment' } }}
-                />
+                <Suspense fallback={<div className="h-48 animate-pulse rounded bg-muted" />}>
+                  <QrReader
+                    delay={300}
+                    onScan={handleCameraScan}
+                    onError={handleCameraError}
+                    style={{ width: '100%' }}
+                    constraints={{ audio: false, video: { facingMode: 'environment' } }}
+                  />
+                </Suspense>
                 {/* Corner overlay */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-40 h-40 relative">
