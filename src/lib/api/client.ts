@@ -15,6 +15,7 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Enable cookies for session
+  timeout: 60_000, // A stalled request fails visibly instead of spinning forever
 });
 
 // Request interceptor - Add auth token to requests

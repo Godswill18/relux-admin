@@ -294,7 +294,7 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
         payload.deliveryAddress = data.deliveryAddress;
       }
 
-      await updateOrder(orderId, payload);
+      const phoneChange = await updateOrder(orderId, payload);
 
       // Re-fetch to get populated editHistory
       const { default: apiClient } = await import('@/lib/api/client');
@@ -308,6 +308,10 @@ export function EditOrderModal({ open, onOpenChange, order, onSaved }: EditOrder
             ? `Order saved. Additional payment of ₦${Math.abs(difference).toLocaleString()} required.`
             : 'Order updated successfully.'
       );
+      // A phone change is never a plain edit: say what really happened to it.
+      if (phoneChange && !['contact_updated', 'unchanged'].includes(phoneChange.outcome)) {
+        toast.info(`Phone number: ${phoneChange.message}`);
+      }
       onSaved?.(updatedOrder);
       onOpenChange(false);
     } catch (err: any) {

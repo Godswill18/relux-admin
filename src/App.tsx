@@ -14,43 +14,47 @@ import { PlaceholderPage } from '@/components/shared/PlaceholderPage';
 import Login from '@/pages/auth/Login';
 import Signup from '@/pages/auth/Signup';
 import ForgotPassword from '@/pages/auth/ForgotPassword';
-import AdminDashboard from '@/features/admin/dashboard/AdminDashboard';
-import OrdersPage from '@/features/admin/orders/OrdersPage';
-import OrderDetailPage from '@/features/admin/orders/OrderDetailPage';
-import DeliveryConfirmPage from '@/features/admin/orders/DeliveryConfirmPage';
-import DeliveredOrdersPage from '@/features/admin/orders/DeliveredOrdersPage';
-import CustomersPage from '@/features/admin/customers/CustomersPage';
-import ServicesPage from '@/features/admin/services/ServicesPage';
-import PaymentsPage from '@/features/admin/payments/PaymentsPage';
-import LoyaltyPage from '@/features/admin/loyalty/LoyaltyPage';
-import LeaderboardPage from '@/features/admin/leaderboard/LeaderboardPage';
-import ReferralsPage from '@/features/admin/referrals/ReferralsPage';
-import SubscriptionsPage from '@/features/admin/subscriptions/SubscriptionsPage';
-import PromoCodesPage from '@/features/admin/promo-codes/PromoCodesPage';
-import StaffPage from '@/features/admin/staff/StaffPage';
-import ShiftsPage from '@/features/admin/shifts/ShiftsPage';
-import PayrollPage from '@/features/admin/payroll/PayrollPage';
-import ChatPage from '@/features/admin/chat/ChatPage';
-import ReportsPage from '@/features/admin/reports/ReportsPage';
-import FinancialReportsPage from '@/features/admin/reports/FinancialReportsPage';
 import { DeveloperOnlyRoute } from '@/components/shared/DeveloperOnlyRoute';
-import AuditPage from '@/features/admin/audit/AuditPage';
-import SettingsPage from '@/features/admin/settings/SettingsPage';
-import AnnouncementsPage from '@/features/admin/announcements/AnnouncementsPage';
-import AdminAttendancePage from '@/features/admin/attendance/AdminAttendancePage';
-import StaffDashboard from '@/features/staff/dashboard/StaffDashboard';
-import StaffOrdersPage from '@/features/staff/orders/StaffOrdersPage';
-import StaffDeliveredOrdersPage from '@/features/staff/orders/StaffDeliveredOrdersPage';
-import StaffAttendancePage from '@/features/staff/attendance/StaffAttendancePage';
-import StaffChatPage from '@/features/staff/chat/StaffChatPage';
-import StaffProfilePage from '@/features/staff/profile/StaffProfilePage';
-import StaffPerformancePage from '@/features/staff/performance/StaffPerformancePage';
 import { DeliveryLayout } from '@/components/layouts/DeliveryLayout';
-import DeliveryDashboard from '@/features/delivery/dashboard/DeliveryDashboard';
-import DeliveryOrdersPage from '@/features/delivery/orders/DeliveryOrdersPage';
-import ScanPickupPage from '@/features/delivery/orders/ScanPickupPage';
 import { Permission, Role } from '@/types';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { lazyPage, RouteSuspense } from '@/components/shared/LazyRoute';
+
+// Each page is its own download, so signing in doesn't fetch the code for every
+// screen in the app. Login stays in the main bundle: it's the first thing shown.
+const AdminDashboard = lazyPage(() => import('@/features/admin/dashboard/AdminDashboard'));
+const OrdersPage = lazyPage(() => import('@/features/admin/orders/OrdersPage'));
+const OrderDetailPage = lazyPage(() => import('@/features/admin/orders/OrderDetailPage'));
+const DeliveryConfirmPage = lazyPage(() => import('@/features/admin/orders/DeliveryConfirmPage'));
+const DeliveredOrdersPage = lazyPage(() => import('@/features/admin/orders/DeliveredOrdersPage'));
+const CustomersPage = lazyPage(() => import('@/features/admin/customers/CustomersPage'));
+const ServicesPage = lazyPage(() => import('@/features/admin/services/ServicesPage'));
+const PaymentsPage = lazyPage(() => import('@/features/admin/payments/PaymentsPage'));
+const LoyaltyPage = lazyPage(() => import('@/features/admin/loyalty/LoyaltyPage'));
+const LeaderboardPage = lazyPage(() => import('@/features/admin/leaderboard/LeaderboardPage'));
+const ReferralsPage = lazyPage(() => import('@/features/admin/referrals/ReferralsPage'));
+const SubscriptionsPage = lazyPage(() => import('@/features/admin/subscriptions/SubscriptionsPage'));
+const PromoCodesPage = lazyPage(() => import('@/features/admin/promo-codes/PromoCodesPage'));
+const StaffPage = lazyPage(() => import('@/features/admin/staff/StaffPage'));
+const ShiftsPage = lazyPage(() => import('@/features/admin/shifts/ShiftsPage'));
+const PayrollPage = lazyPage(() => import('@/features/admin/payroll/PayrollPage'));
+const ChatPage = lazyPage(() => import('@/features/admin/chat/ChatPage'));
+const ReportsPage = lazyPage(() => import('@/features/admin/reports/ReportsPage'));
+const FinancialReportsPage = lazyPage(() => import('@/features/admin/reports/FinancialReportsPage'));
+const AuditPage = lazyPage(() => import('@/features/admin/audit/AuditPage'));
+const SettingsPage = lazyPage(() => import('@/features/admin/settings/SettingsPage'));
+const AnnouncementsPage = lazyPage(() => import('@/features/admin/announcements/AnnouncementsPage'));
+const AdminAttendancePage = lazyPage(() => import('@/features/admin/attendance/AdminAttendancePage'));
+const StaffDashboard = lazyPage(() => import('@/features/staff/dashboard/StaffDashboard'));
+const StaffOrdersPage = lazyPage(() => import('@/features/staff/orders/StaffOrdersPage'));
+const StaffDeliveredOrdersPage = lazyPage(() => import('@/features/staff/orders/StaffDeliveredOrdersPage'));
+const StaffAttendancePage = lazyPage(() => import('@/features/staff/attendance/StaffAttendancePage'));
+const StaffChatPage = lazyPage(() => import('@/features/staff/chat/StaffChatPage'));
+const StaffProfilePage = lazyPage(() => import('@/features/staff/profile/StaffProfilePage'));
+const StaffPerformancePage = lazyPage(() => import('@/features/staff/performance/StaffPerformancePage'));
+const DeliveryDashboard = lazyPage(() => import('@/features/delivery/dashboard/DeliveryDashboard'));
+const DeliveryOrdersPage = lazyPage(() => import('@/features/delivery/orders/DeliveryOrdersPage'));
+const ScanPickupPage = lazyPage(() => import('@/features/delivery/orders/ScanPickupPage'));
 
 // ============================================================================
 // ROOT REDIRECT COMPONENT
@@ -129,7 +133,7 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AdminLayout>
-                  <Outlet />
+                  <RouteSuspense><Outlet /></RouteSuspense>
                 </AdminLayout>
               </ProtectedRoute>
             }
@@ -318,7 +322,7 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <StaffLayout>
-                  <Outlet />
+                  <RouteSuspense><Outlet /></RouteSuspense>
                 </StaffLayout>
               </ProtectedRoute>
             }
@@ -388,7 +392,7 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <DeliveryLayout>
-                  <Outlet />
+                  <RouteSuspense><Outlet /></RouteSuspense>
                 </DeliveryLayout>
               </ProtectedRoute>
             }
