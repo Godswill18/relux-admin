@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { OrderTransferPanel } from './OrderTransferPanel';
 import {
   ArrowLeft,
   Package,
@@ -927,6 +928,7 @@ export default function OrderDetailPage() {
               ) : (
                 <p className="text-sm text-muted-foreground">No customer info</p>
               )}
+              <OrderTransferPanel orderId={order._id} onChanged={() => fetchOrder(true)} />
             </CardContent>
           </Card>
 

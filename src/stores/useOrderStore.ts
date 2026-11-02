@@ -34,7 +34,8 @@ interface OrderState {
   fetchOrders: () => Promise<void>;
   loadMoreOrders: () => Promise<void>;
   createOrder: (orderData: Partial<Order>) => Promise<Order | null>;
-  updateOrder: (orderId: string, orderData: Partial<Order>) => Promise<void>;
+  /** Resolves with the phone-change result when the edit changed the phone. */
+  updateOrder: (orderId: string, orderData: Partial<Order>) => Promise<{ outcome: string; message: string } | undefined>;
   setSelectedOrder: (order: Order | null) => void;
   setFilters: (filters: Partial<OrderFilters>) => void;
   updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
@@ -179,7 +180,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           selectedOrder:
             state.selectedOrder?._id === orderId ? updatedOrder : state.selectedOrder,
         }));
+        return raw?.transfer;
       }
+      return undefined;
     } catch (error: any) {
       console.error('Error updating order:', error);
       set({ error: error.response?.data?.message || 'Failed to update order' });
