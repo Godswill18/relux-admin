@@ -10,13 +10,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
-import { Save, Shield, Timer, MapPin } from 'lucide-react';
+import { Save, Shield, Timer, MapPin, PartyPopper } from 'lucide-react';
 import { RolesPermissionsTab } from './tabs/RolesPermissionsTab';
 import { WorkLocationTab } from './tabs/WorkLocationTab';
 import { ServiceLevelTimersTab } from './tabs/ServiceLevelTimersTab';
+import { CampaignsTab } from './tabs/CampaignsTab';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('business');
+  // Campaigns are the Superadmin's (developer role) alone — the API enforces it too.
+  const isSuperadmin = useAuthStore((st) => st.user?.role?.toLowerCase?.() === 'developer');
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -55,6 +59,12 @@ export default function SettingsPage() {
               <MapPin className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
               Work Location
             </TabsTrigger>
+            {isSuperadmin && (
+              <TabsTrigger value="campaigns" className="flex-1 sm:flex-none text-xs sm:text-sm whitespace-nowrap flex items-center gap-1">
+                <PartyPopper className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+                Campaigns
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -246,6 +256,12 @@ export default function SettingsPage() {
         <TabsContent value="location">
           <WorkLocationTab />
         </TabsContent>
+
+        {isSuperadmin && (
+          <TabsContent value="campaigns">
+            <CampaignsTab />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
