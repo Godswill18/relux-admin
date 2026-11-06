@@ -25,6 +25,7 @@ import {
   AnnouncementBanners,
   AnnouncementPopups,
 } from '@/components/shared/AnnouncementSystem';
+import { AnniversaryCelebrationBanner } from '@/components/celebration/AnniversaryCelebrationBanner';
 
 // ============================================================================
 // HELPERS
@@ -149,6 +150,9 @@ export default function StaffDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Relux Is One! — global campaign, Superadmin-controlled */}
+      <AnniversaryCelebrationBanner />
+
       {/* ── Announcements ──────────────────────────────────────────────────── */}
       <AnnouncementBanners items={banners} />
       <AnnouncementPopups  items={popups} />
