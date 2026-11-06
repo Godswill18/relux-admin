@@ -1,4 +1,4 @@
-const CACHE = 'relux-admin-v1';
+const CACHE = 'relux-admin-v2';
 
 const PRECACHE = ['/', '/favicon.webp', '/favicon.ico', '/manifest.json'];
 
@@ -26,6 +26,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   if (request.method !== 'GET') return;
+  // Only this app's own files. Images in MinIO, the API's /health and any
+  // other site are left to the browser: routing them through here made those
+  // requests fail (net::ERR_FAILED) and would cache other origins' responses.
+  if (url.origin !== self.location.origin) return;
 
   if (
     url.pathname.startsWith('/api/') ||

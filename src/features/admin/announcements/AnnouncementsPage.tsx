@@ -92,6 +92,9 @@ function resolveImageUrl(imageUrl: string | undefined): string {
 
 // ── Image Picker ──────────────────────────────────────────────────────────────
 
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
 function ImagePicker({
   value,
   onChange,
@@ -103,39 +106,76 @@ function ImagePicker({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [preview, setPreview]         = useState<string>(resolveImageUrl(value));
   const [uploading, setUploading]     = useState(false);
+  const [progress, setProgress]       = useState(0);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
 
   // Sync preview when saved value changes (e.g. on edit open)
   useEffect(() => {
     if (!pendingFile) setPreview(resolveImageUrl(value));
   }, [value]);
 
+  // Never leave an upload running after the dialog closes
+  useEffect(() => () => xhrRef.current?.abort(), []);
+
+  const revert = () => {
+    setPreview(resolveImageUrl(value)); // the existing image stays
+    setPendingFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // The browser sends the file straight to MinIO with a short-lived signed URL
+  // from the API. The API never receives the image itself.
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      toast.error('Only JPG, PNG, WebP or GIF images can be uploaded');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error('Images must be 5 MB or smaller');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
-    // Local preview immediately
-    const objectUrl = URL.createObjectURL(file);
-    setPreview(objectUrl);
+    setPreview(URL.createObjectURL(file));
     setPendingFile(file);
-
-    // Upload straight away so the parent form gets the path
     setUploading(true);
+    setProgress(0);
     try {
-      const fd = new FormData();
-      fd.append('image', file);
-      const res = await apiClient.post('/announcements/upload-image', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const res = await apiClient.post('/announcements/upload-url', {
+        fileName: file.name, contentType: file.type, size: file.size,
       });
-      const uploadedPath: string = res.data.data.imageUrl;
-      onChange(uploadedPath);
+      const { uploadUrl, headers, imageUrl } = res.data.data;
+
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhrRef.current = xhr;
+        xhr.open('PUT', uploadUrl);
+        Object.entries(headers as Record<string, string>).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+        xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100)); };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300
+          ? resolve()
+          : reject(new Error(xhr.status === 403 ? 'The upload link expired. Please choose the image again.' : `Upload failed (${xhr.status})`)));
+        xhr.onerror = () => reject(new Error('Could not reach image storage. Check your connection and try again.'));
+        xhr.onabort = () => reject(new Error('cancelled'));
+        xhr.send(file);
+      });
+
+      onChange(imageUrl);
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Image upload failed');
-      setPreview(resolveImageUrl(value)); // revert preview
-      setPendingFile(null);
+      if (err?.message !== 'cancelled') {
+        toast.error(err?.response?.data?.message || err?.message || 'Image upload failed');
+      }
+      revert();
     } finally {
+      xhrRef.current = null;
       setUploading(false);
     }
   };
+
+  const handleCancelUpload = () => xhrRef.current?.abort();
 
   const handleRemove = () => {
     setPendingFile(null);
@@ -163,8 +203,12 @@ function ImagePicker({
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
           {uploading && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-white" />
+            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center gap-2 text-white">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="text-xs">Uploading {progress}%</span>
+              <button type="button" onClick={handleCancelUpload} className="rounded bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30">
+                Cancel
+              </button>
             </div>
           )}
           {!uploading && (
