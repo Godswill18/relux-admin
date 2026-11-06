@@ -47,6 +47,7 @@ import {
   AnnouncementBanners,
   AnnouncementPopups,
 } from '@/components/shared/AnnouncementSystem';
+import { AnniversaryCelebrationBanner } from '@/components/celebration/AnniversaryCelebrationBanner';
 
 // ============================================================================
 // CONSTANTS — derived from shared status config
@@ -308,6 +309,9 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Relux Is One! — global campaign, Superadmin-controlled */}
+      <AnniversaryCelebrationBanner />
+
       {/* ── Announcements ──────────────────────────────────────────────────── */}
       <AnnouncementBanners items={banners} />
       <AnnouncementPopups  items={popups} />

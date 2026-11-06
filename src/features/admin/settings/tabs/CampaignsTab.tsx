@@ -1,7 +1,7 @@
 // ============================================================================
 // CAMPAIGNS — the "Relux Is One!" anniversary celebration. Superadmin
 // (developer role) only; the backend enforces it. One global switch: every
-// customer dashboard shows or hides the celebration together, live.
+// customer and staff dashboard shows or hides the celebration together, live.
 // ============================================================================
 
 import { useEffect, useState } from 'react';
@@ -78,7 +78,7 @@ export function CampaignsTab() {
           <PartyPopper className="h-5 w-5 text-amber-500" /> Anniversary Celebration Mode
         </CardTitle>
         <CardDescription>
-          Shows the "Relux Is One!" celebration on every customer dashboard. Customers can't turn it off; changes reach open dashboards straight away.
+          Shows the "Relux Is One!" celebration on every customer and staff dashboard. Only you can turn it on or off; changes reach open dashboards straight away.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">

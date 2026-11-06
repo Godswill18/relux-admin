@@ -115,3 +115,54 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Anniversary celebration (components/celebration) — same as the customer app
+   CSS-only: transform/opacity animations, removed with the components when
+   Celebration Mode is off, and switched off for reduced-motion users. */
+@keyframes relux-confetti-fall {
+  0% { transform: translate3d(0, -20px, 0) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translate3d(14px, 340px, 0) rotate(540deg); opacity: 0; }
+}
+@keyframes relux-float {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+@keyframes relux-glow-pulse {
+  0%, 100% { opacity: .75; }
+  50% { opacity: 1; }
+}
+@keyframes relux-twinkle {
+  0%, 100% { transform: scale(.6); opacity: .3; }
+  50% { transform: scale(1); opacity: 1; }
+}
+@keyframes relux-rise-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.relux-confetti > span {
+  position: absolute;
+  top: -12px;
+  opacity: 0;
+  animation-name: relux-confetti-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+.relux-float { animation: relux-float 6s ease-in-out infinite; }
+.relux-glow { animation: relux-glow-pulse 4s ease-in-out infinite; }
+.relux-twinkle { animation: relux-twinkle 2.8s ease-in-out infinite; }
+.relux-rise { animation: relux-rise-in .5s ease-out both; }
+.relux-ribbon {
+  background: linear-gradient(180deg, #ffe58a 0%, #f5b82e 55%, #d8920f 100%);
+  clip-path: polygon(0 0, 100% 0, 96% 50%, 100% 100%, 0 100%, 4% 50%);
+  box-shadow: 0 6px 18px rgba(4, 17, 38, .25);
+}
+.relux-script {
+  font-family: 'Segoe Script', 'Brush Script MT', 'Snell Roundhand', cursive;
+  font-style: italic;
+}
+@media (prefers-reduced-motion: reduce) {
+  .relux-confetti { display: none; }
+  .relux-float, .relux-glow, .relux-twinkle, .relux-rise { animation: none; }
+}

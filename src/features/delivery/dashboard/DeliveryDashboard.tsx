@@ -15,6 +15,7 @@ import { format, isSameDay } from 'date-fns';
 import apiClient from '@/lib/api/client';
 import { toast } from 'sonner';
 import socketClient from '@/lib/socket/client';
+import { AnniversaryCelebrationBanner } from '@/components/celebration/AnniversaryCelebrationBanner';
 
 // ============================================================================
 // METRIC CARD
@@ -133,6 +134,9 @@ export default function DeliveryDashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Relux Is One! — global campaign, Superadmin-controlled */}
+      <AnniversaryCelebrationBanner />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
